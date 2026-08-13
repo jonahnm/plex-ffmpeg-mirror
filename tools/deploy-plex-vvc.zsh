@@ -35,9 +35,13 @@ die() {
 [[ -f "$PMS_LIB/libavcodec.so.60" && -f "$PMS_LIB/libavformat.so.60" ]] || \
     die "Expected Plex's ffmpeg libraries (libavcodec.so.60, libavformat.so.60) in $PMS_LIB"
 
-# 1. Build the mirrored source with shared libraries.
+# 1. Build the mirrored source with shared libraries. Pass the fcntl
+#    compatibility header so the libraries do not reference fcntl64 (which
+#    some glibc versions do not export) and stay loadable on any host.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
-zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -- --enable-shared || die "build failed"
+zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -- --enable-shared \
+    --extra-cflags="-include${REPO_PATH}/tools/fcntl-compat.h" \
+    || die "build failed"
 
 # 2. Locate the freshly built libraries.
 local avcodec libavcodec libformat
@@ -47,20 +51,22 @@ libformat="$(ls "${SRC_DIR}/libavformat/libavformat.so."* 2> /dev/null | grep -v
 echo "Built: ${avcodec:t} (${libformat:t})"
 
 # 3. Pre-flight: the freshly built libraries must be able to resolve all
-# their symbols against this host's glibc. Plex builds against an old
-# glibc; a build done on a newer glibc (>= 2.28, which redirects fcntl to
-# fcntl64) will fail to load here with "fcntl64: symbol not found".
+# their symbols against this host's glibc (ldd -r exits non-zero when any
+# symbol is undefined). Plex builds against an old glibc; a build done on
+# a newer glibc will fail to load here with e.g. "fcntl64: symbol not
+# found".
 check_lib() {
-    local lib="$1"
-    local unresolved
-    unresolved="$(LD_LIBRARY_PATH="$(dirname "$lib")" ldd -r "$lib" 2>&1 | grep 'symbol not found' | head -3)"
-    if [[ -n "$unresolved" ]]; then
+    local lib="$1" ldd_log
+    ldd_log="$(mktemp)"
+    if ! LD_LIBRARY_PATH="$(dirname "$lib")" ldd -r "$lib" > "$ldd_log" 2>&1; then
         echo "ERROR: $(basename "$lib") cannot load on this host:" >&2
-        echo "$unresolved" >&2
-        echo "The build used a newer glibc than this system's runtime. Build on this" >&2
+        cat "$ldd_log" >&2
+        rm -f "$ldd_log"
+        echo "The build used a glibc newer than this system's runtime. Build on this" >&2
         echo "machine itself (same distro/glibc), or in an old container, then retry." >&2
         exit 1
     fi
+    rm -f "$ldd_log"
 }
 check_lib "$avcodec"
 check_lib "$libformat"
