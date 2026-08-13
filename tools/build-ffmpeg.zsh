@@ -89,7 +89,15 @@ if (( CLEAN )); then
 fi
 
 echo "== configure =="
-./configure --disable-doc "${TOOL_ARGS[@]}" "${CONFIGURE_ARGS[@]}" || die "configure failed"
+# Plex's configure script uses bash-only pattern substitutions (e.g.
+# ${cfg/_*/_decoder}) despite its #!/bin/sh shebang. macOS /bin/sh is bash,
+# but Debian's /bin/sh is dash, which rejects those. Run it with bash
+# explicitly when available.
+if command -v bash > /dev/null 2>&1; then
+    bash ./configure --disable-doc "${TOOL_ARGS[@]}" "${CONFIGURE_ARGS[@]}" || die "configure failed"
+else
+    ./configure --disable-doc "${TOOL_ARGS[@]}" "${CONFIGURE_ARGS[@]}" || die "configure failed"
+fi
 
 echo "== make -j${JOBS} =="
 make -j"$JOBS" || die "make failed"
