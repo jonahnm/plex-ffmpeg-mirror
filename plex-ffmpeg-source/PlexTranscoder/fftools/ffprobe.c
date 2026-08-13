@@ -3054,10 +3054,23 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     par     = stream->codecpar;
     dec_ctx = ist->dec_ctx;
     if (cd = avcodec_descriptor_get(par->codec_id)) {
-        print_str("codec_name", cd->name);
-        if (!do_bitexact) {
-            print_str("codec_long_name",
-                      cd->long_name ? cd->long_name : "unknown");
+        // Plex's media analyzer maps ffprobe's codec_name to its internal
+        // codec enum, which has no VVC entry yet (it reports the codec as
+        // "NONE"). Report VVC as HEVC so Plex recognizes the stream and
+        // can transcode it (the VVC decoder itself is keyed by codec id,
+        // not this name).
+        if (par->codec_id == AV_CODEC_ID_VVC) {
+            print_str("codec_name", "hevc");
+            if (!do_bitexact) {
+                print_str("codec_long_name",
+                          "HEVC (High Efficiency Video Coding)");
+            }
+        } else {
+            print_str("codec_name", cd->name);
+            if (!do_bitexact) {
+                print_str("codec_long_name",
+                          cd->long_name ? cd->long_name : "unknown");
+            }
         }
     } else {
         print_str_opt("codec_name", "unknown");

@@ -54,7 +54,11 @@ but not the native VVC decoder or VVC-in-Matroska support. After every sync,
   VCC CodecPrivate writer, ported from FFmpeg 8.0),
 - the VVC decoder is no longer marked `AV_CODEC_CAP_EXPERIMENTAL`, so it
   decodes without `-strict experimental` and no longer prints the
-  "experimental codecs are not enabled" warning.
+  "experimental codecs are not enabled" warning,
+- Plex integration: ffprobe reports VVC streams as `hevc` (Plex's analyzer
+  maps ffprobe's `codec_name` to its internal codec enum, which has no VVC
+  entry and otherwise shows the codec as "NONE"; the decoder itself is keyed
+  by codec id, so decoding and `-c:v vvc` are unaffected).
 
 Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
 `fate-vvc-conformance-*` streams decode bit-identically, and a VVC stream
