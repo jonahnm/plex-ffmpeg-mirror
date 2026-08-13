@@ -25806,6 +25806,25 @@ index 329055cc..3b9c28a8 100644
                                              movenchint.o mov_chan.o rtp.o \
                                              movenccenc.o movenc_ttml.o rawutils.o \
                                              dovi_isom.o evc.o
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c
+index cbdf48de..a2b5929b 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c
+@@ -41,6 +41,14 @@
+ #include "os_support.h"
+ #include "url.h"
+ 
++/* Plex deployment: glibc >= 2.28 redirects fcntl() to fcntl64() when
++ * _FILE_OFFSET_BITS=64, and fcntl64 is not exported by every glibc, which
++ * prevents the libraries from loading on those hosts. fcntl() already has
++ * 64-bit semantics on 64-bit targets, so drop the redirect. */
++#ifdef fcntl
++#undef fcntl
++#endif
++
+ /* Some systems may not have S_ISFIFO */
+ #ifndef S_ISFIFO
+ #  ifdef S_IFIFO
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroska.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroska.c
 index 5878594e..4c83b9a0 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroska.c
@@ -25853,6 +25872,44 @@ index c1f3fde2..87b55034 100644
                  (AV_RB24(par->extradata) == 1 || AV_RB32(par->extradata) == 1))
                  track->reformat = mkv_reformat_h2645;
              break;
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/network.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/network.c
+index f752efc4..76c69901 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavformat/network.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/network.c
+@@ -28,6 +28,14 @@
+ #include "libavutil/mem.h"
+ #include "libavutil/time.h"
+ 
++/* Plex deployment: glibc >= 2.28 redirects fcntl() to fcntl64() when
++ * _FILE_OFFSET_BITS=64, and fcntl64 is not exported by every glibc, which
++ * prevents the libraries from loading on those hosts. fcntl() already has
++ * 64-bit semantics on 64-bit targets, so drop the redirect. */
++#ifdef fcntl
++#undef fcntl
++#endif
++
+ int ff_tls_init(void)
+ {
+ #if CONFIG_TLS_PROTOCOL
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/os_support.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/os_support.c
+index 2de6a7c3..3a891f98 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavformat/os_support.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/os_support.c
+@@ -41,6 +41,14 @@
+ 
+ #include "network.h"
+ 
++/* Plex deployment: glibc >= 2.28 redirects fcntl() to fcntl64() when
++ * _FILE_OFFSET_BITS=64, and fcntl64 is not exported by every glibc, which
++ * prevents the libraries from loading on those hosts. fcntl() already has
++ * 64-bit semantics on 64-bit targets, so drop the redirect. */
++#ifdef fcntl
++#undef fcntl
++#endif
++
+ #if !HAVE_GETADDRINFO
+ #if !HAVE_INET_ATON
+ #include <stdlib.h>
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/vvc.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/vvc.c
 new file mode 100644
 index 00000000..14a4c0a2
@@ -26935,3 +26992,22 @@ index 00000000..11c70054
 +                       int size, int ps_array_completeness);
 +
 +#endif /* AVFORMAT_VVC_H */
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c b/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c
+index 9aa4e4ac..4b234843 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c
+@@ -40,6 +40,14 @@
+ #include <errno.h>
+ #include "wchar_filename.h"
+ 
++/* Plex deployment: glibc >= 2.28 redirects fcntl() to fcntl64() when
++ * _FILE_OFFSET_BITS=64, and fcntl64 is not exported by every glibc, which
++ * prevents the libraries from loading on those hosts. fcntl() already has
++ * 64-bit semantics on 64-bit targets, so drop the redirect. */
++#ifdef fcntl
++#undef fcntl
++#endif
++
+ static int win32_open(const char *filename_utf8, int oflag, int pmode)
+ {
+     int fd;
