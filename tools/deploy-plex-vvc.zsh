@@ -35,11 +35,13 @@ die() {
 [[ -f "$PMS_LIB/libavcodec.so.60" && -f "$PMS_LIB/libavformat.so.60" ]] || \
     die "Expected Plex's ffmpeg libraries (libavcodec.so.60, libavformat.so.60) in $PMS_LIB"
 
-# 1. Build the mirrored source with shared libraries. Pass the fcntl
-#    compatibility header so the libraries do not reference fcntl64 (which
-#    some glibc versions do not export) and stay loadable on any host.
+# 1. Build the mirrored source with shared libraries, forcing a clean
+#    rebuild so the current sources (including the fcntl compatibility
+#    undefs) are always compiled in. Pass the fcntl compatibility header
+#    as well, so libraries do not reference fcntl64 (which some glibc
+#    versions do not export) and stay loadable on any host.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
-zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -- --enable-shared \
+zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     "--extra-cflags=-include ${REPO_PATH}/tools/fcntl-compat.h" \
     || die "build failed"
 
