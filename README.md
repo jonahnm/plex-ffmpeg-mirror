@@ -14,6 +14,7 @@ of your own is required -- GitHub runs it for you.
 tools/fetch-plex-ffmpeg.zsh     # downloads + unpacks the source
 tools/apply-vvc-patch.zsh       # reapplies the VVC decoder patch after each sync
 tools/vvc-decoder.patch         # adds the native VVC (H.266) decoder to Plex's source
+tools/build-ffmpeg.zsh          # builds the source into a working ffmpeg
 tools/backfill.zsh              # backfills history from local PMS tarballs
 plex-ffmpeg-source/             # the mirrored source (committed by the workflow)
   PlexTranscoder/               # Plex's single ffmpeg GPL source
@@ -86,3 +87,17 @@ Locally: `PLEX_TOKEN=xxxx zsh tools/fetch-plex-ffmpeg.zsh`.
 zsh tools/fetch-plex-ffmpeg.zsh                 # -> ./plex-ffmpeg-source
 zsh tools/fetch-plex-ffmpeg.zsh /some/folder    # -> /some/folder
 ```
+
+## Build locally
+
+```zsh
+zsh tools/build-ffmpeg.zsh                       # full build (ffmpeg/ffprobe/ffplay)
+zsh tools/build-ffmpeg.zsh -j8                   # control parallelism
+zsh tools/build-ffmpeg.zsh /some/folder/PlexTranscoder   # build a fetched copy elsewhere
+zsh tools/build-ffmpeg.zsh -- --enable-...       # pass extra ./configure args
+```
+
+The build runs in-tree; `configure` is run with `--disable-doc`, the VVC
+decoder patch is (re)applied first if needed, and on macOS the system
+`ar`/`ranlib`/`strip` are preferred over Homebrew's GNU binutils, whose
+GNU-format archives and stripped binaries macOS cannot link or run.
