@@ -35,6 +35,17 @@ die() {
 [[ -f "$PMS_LIB/libavcodec.so.60" && -f "$PMS_LIB/libavformat.so.60" ]] || \
     die "Expected Plex's ffmpeg libraries (libavcodec.so.60, libavformat.so.60) in $PMS_LIB"
 
+# Plex's binaries are built against musl libc (their configure uses
+# x86_64-linux-musl-clang), so the PMS process resolves symbols against
+# musl's libc, not the system glibc. Libraries built with glibc headers
+# reference symbols musl does not provide (fcntl64, __isoc23_*), so the
+# whole build must use the musl toolchain.
+typeset -gr MUSL_CC="x86_64-linux-musl-gcc"
+if ! command -v "$MUSL_CC" > /dev/null 2>&1; then
+    echo "== installing musl-tools =="
+    apt-get install -y musl-tools || die "musl-tools is required (apt-get install musl-tools)"
+fi
+
 # ffmpeg's configure finds libx264 via pkg-config; make sure it exists.
 if ! command -v pkg-config > /dev/null 2>&1; then
     echo "== installing pkg-config =="
@@ -49,8 +60,8 @@ fi
 typeset -gr X264_PREFIX="${REPO_PATH}/run/x264"
 # --enable-pic is required: the static library is linked into the shared
 # libavcodec.so.60, and a non-PIC archive cannot be.
-if [[ ! -x "${X264_PREFIX}/bin/x264" || ! -f "${X264_PREFIX}/.deploy-stamp" ]]; then
-    echo "== building x264 (static, PIC) =="
+if [[ ! -x "${X264_PREFIX}/bin/x264" || ! -f "${X264_PREFIX}/.deploy-stamp-musl" ]]; then
+    echo "== building x264 (static, PIC, musl) =="
     make_dir() { mkdir -p "$1" || die "failed to create $1"; }
     make_dir "${REPO_PATH}/run"
     if [[ ! -d "${REPO_PATH}/run/x264-src" ]]; then
@@ -59,10 +70,11 @@ if [[ ! -x "${X264_PREFIX}/bin/x264" || ! -f "${X264_PREFIX}/.deploy-stamp" ]]; 
     fi
     ( cd "${REPO_PATH}/run/x264-src" \
         && make distclean > /dev/null 2>&1 || true \
-        && ./configure --disable-cli --enable-static --enable-pic --prefix="$X264_PREFIX" \
+        && ./configure --disable-cli --enable-static --enable-pic \
+            --cc="$MUSL_CC" --host=x86_64-linux-musl --prefix="$X264_PREFIX" \
         && make -j"$(nproc 2> /dev/null || echo 2)" \
         && make install ) || die "x264 build failed"
-    touch "${X264_PREFIX}/.deploy-stamp"
+    touch "${X264_PREFIX}/.deploy-stamp-musl"
 fi
 export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
@@ -71,7 +83,7 @@ export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CON
 #    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
-    --enable-gpl --enable-libx264 \
+    --enable-gpl --enable-libx264 --cc="$MUSL_CC" \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
@@ -87,22 +99,20 @@ grep -q "libx264" "$avcodec" \
 echo "libx264 encoder: enabled"
 
 # 4. Pre-flight: the freshly built libraries must be able to resolve all
-# their symbols against this host's glibc (ldd -r exits non-zero when any
-# symbol is undefined). Plex builds against an old glibc; a build done on
-# a newer glibc will fail to load here with e.g. "fcntl64: symbol not
-# found".
+# their symbols against the host's libc (musl, since Plex ships musl
+# binaries). ldd follows the ELF's interpreter, so it exercises the same
+# loader PMS uses; grep for unresolved-symbol diagnostics rather than
+# relying on exit codes, which differ between loaders.
 check_lib() {
-    local lib="$1" ldd_log
-    ldd_log="$(mktemp)"
-    if ! LD_LIBRARY_PATH="$(dirname "$lib")" ldd -r "$lib" > "$ldd_log" 2>&1; then
+    local lib="$1" out
+    out="$(LD_LIBRARY_PATH="$(dirname "$lib")" ldd -r "$lib" 2>&1)"
+    if grep -qE "not found|undefined|Error loading" <<< "$out"; then
         echo "ERROR: $(basename "$lib") cannot load on this host:" >&2
-        cat "$ldd_log" >&2
-        rm -f "$ldd_log"
-        echo "The build used a glibc newer than this system's runtime. Build on this" >&2
-        echo "machine itself (same distro/glibc), or in an old container, then retry." >&2
+        echo "$out" >&2
+        echo "The libraries must be built with the musl toolchain to run in" >&2
+        echo "Plex's runtime; check the build used x86_64-linux-musl-gcc." >&2
         exit 1
     fi
-    rm -f "$ldd_log"
 }
 check_lib "$avcodec"
 check_lib "$libformat"
