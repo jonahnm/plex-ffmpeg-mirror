@@ -89,7 +89,7 @@ export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CON
 #    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
-    --enable-gpl --enable-libx264 --cc="$MUSL_CC" \
+    --enable-gpl --enable-libx264 --enable-eae --cc="$MUSL_CC" \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
@@ -106,7 +106,10 @@ if ! readelf -d "$avcodec" 2> /dev/null | grep -q '\[libc\.so\]'; then
 fi
 grep -q "libx264" "$avcodec" \
     || die "libx264 encoder not found in the build"
+grep -q "eac3_eae" "$avcodec" \
+    || die "EAE codecs not found in the build (Plex's -eae_prefix option needs them)"
 echo "libx264 encoder: enabled"
+echo "EAE codecs: enabled"
 
 # 4. Pre-flight: the freshly built libraries must be able to resolve all
 # their symbols against the host's libc (musl, since Plex ships musl
