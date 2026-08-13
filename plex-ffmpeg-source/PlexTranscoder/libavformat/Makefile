@@ -761,3 +761,12 @@ TOOLS     = aviocat                                                     \
             seek_print                                                  \
             sidxindex                                                   \
             venc_data_dump
+
+# Plex deployment: glibc redirects fcntl() to fcntl64() when
+# _FILE_OFFSET_BITS=64 (via a macro or __REDIRECT), and fcntl64 is not
+# exported by every glibc, so the built libraries fail to load on those
+# hosts. These files call fcntl(); off_t is already 64-bit on 64-bit
+# targets, so drop the redirect for them.
+libavformat/file.o:        CFLAGS += -U_FILE_OFFSET_BITS
+libavformat/network.o:     CFLAGS += -U_FILE_OFFSET_BITS
+libavformat/os_support.o:  CFLAGS += -U_FILE_OFFSET_BITS

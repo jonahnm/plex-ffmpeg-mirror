@@ -25785,7 +25785,7 @@ index 00000000..0d2c683f
 +#endif
 +}
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/Makefile b/plex-ffmpeg-source/PlexTranscoder/libavformat/Makefile
-index 329055cc..3b9c28a8 100644
+index 329055cc..294ade50 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavformat/Makefile
 +++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/Makefile
 @@ -341,7 +341,7 @@ OBJS-$(CONFIG_MATROSKA_DEMUXER)          += matroskadec.o matroska.o  \
@@ -25806,6 +25806,19 @@ index 329055cc..3b9c28a8 100644
                                              movenchint.o mov_chan.o rtp.o \
                                              movenccenc.o movenc_ttml.o rawutils.o \
                                              dovi_isom.o evc.o
+@@ -761,3 +761,12 @@ TOOLS     = aviocat                                                     \
+             seek_print                                                  \
+             sidxindex                                                   \
+             venc_data_dump
++
++# Plex deployment: glibc redirects fcntl() to fcntl64() when
++# _FILE_OFFSET_BITS=64 (via a macro or __REDIRECT), and fcntl64 is not
++# exported by every glibc, so the built libraries fail to load on those
++# hosts. These files call fcntl(); off_t is already 64-bit on 64-bit
++# targets, so drop the redirect for them.
++libavformat/file.o:        CFLAGS += -U_FILE_OFFSET_BITS
++libavformat/network.o:     CFLAGS += -U_FILE_OFFSET_BITS
++libavformat/os_support.o:  CFLAGS += -U_FILE_OFFSET_BITS
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c
 index cbdf48de..a2b5929b 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavformat/file.c
@@ -26992,6 +27005,18 @@ index 00000000..11c70054
 +                       int size, int ps_array_completeness);
 +
 +#endif /* AVFORMAT_VVC_H */
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavutil/Makefile b/plex-ffmpeg-source/PlexTranscoder/libavutil/Makefile
+index 0f082828..976d6b1b 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavutil/Makefile
++++ b/plex-ffmpeg-source/PlexTranscoder/libavutil/Makefile
+@@ -285,3 +285,7 @@ tools/crypto_bench$(EXESUF): ELIBS += $(if $(VERSUS),$(subst +, -l,+$(VERSUS)),)
+ tools/crypto_bench.o: CFLAGS += -DUSE_EXT_LIBS=0$(if $(VERSUS),$(subst +,+USE_,+$(VERSUS)),)
+ 
+ $(SUBDIR)tests/lzo$(EXESUF): ELIBS = -llzo2
++
++# Plex deployment: see libavformat/Makefile - fcntl() must not be
++# redirected to fcntl64().
++libavutil/file_open.o:  CFLAGS += -U_FILE_OFFSET_BITS
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c b/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c
 index 9aa4e4ac..4b234843 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavutil/file_open.c

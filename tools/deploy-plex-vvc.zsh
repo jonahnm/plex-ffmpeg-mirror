@@ -37,12 +37,9 @@ die() {
 
 # 1. Build the mirrored source with shared libraries, forcing a clean
 #    rebuild so the current sources (including the fcntl compatibility
-#    undefs) are always compiled in. Pass the fcntl compatibility header
-#    as well, so libraries do not reference fcntl64 (which some glibc
-#    versions do not export) and stay loadable on any host.
+#    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
-    "--extra-cflags=-include ${REPO_PATH}/tools/fcntl-compat.h" \
     || die "build failed"
 
 # 2. Locate the freshly built libraries.
