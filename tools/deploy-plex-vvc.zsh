@@ -75,7 +75,7 @@ install_lib() {
         echo "Backed up ${PMS_LIB}/${dst_name} -> ${dst_name}.orig-vvc"
     fi
     rm -f "${PMS_LIB}/${dst_name}"
-    cp -a "$src" "${PMS_LIB}/${dst_name}"
+    cp -aL "$src" "${PMS_LIB}/${dst_name}"
     ln -sf "${dst_name}" "${PMS_LIB}/${dst_name%%.*}.so"
     echo "Installed ${PMS_LIB}/${dst_name}"
 }

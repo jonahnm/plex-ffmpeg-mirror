@@ -112,6 +112,13 @@ fi
 
 echo
 echo "== result =="
+# In a shared build the binaries need the built libraries on the library
+# path (they have no rpath pointing at the build tree).
+if [[ -f ffbuild/config.mak ]] && grep -q "CONFIG_SHARED=yes" ffbuild/config.mak; then
+    libpath="$(find "$PWD" -maxdepth 2 -name 'lib*.so.*' -o -maxdepth 2 -name 'lib*.dylib' 2>/dev/null | xargs -n1 dirname 2>/dev/null | sort -u | paste -sd: -)"
+    LD_LIBRARY_PATH="${libpath}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH
+fi
 "$PWD/ffmpeg" -version 2>&1 | head -1
 if grep -q "CONFIG_VVC_DECODER=yes" ffbuild/config.mak; then
     echo "VVC decoder: enabled"
