@@ -10,38 +10,6 @@ index 1953662a..dfc27a87 100755
  wcmv_decoder_select="inflate_wrapper"
  webp_decoder_select="vp8_decoder exif"
  wmalossless_decoder_select="llauddsp"
-diff --git a/plex-ffmpeg-source/PlexTranscoder/fftools/ffprobe.c b/plex-ffmpeg-source/PlexTranscoder/fftools/ffprobe.c
-index 71f6cc3a..00c0eac1 100644
---- a/plex-ffmpeg-source/PlexTranscoder/fftools/ffprobe.c
-+++ b/plex-ffmpeg-source/PlexTranscoder/fftools/ffprobe.c
-@@ -3054,10 +3054,23 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
-     par     = stream->codecpar;
-     dec_ctx = ist->dec_ctx;
-     if (cd = avcodec_descriptor_get(par->codec_id)) {
--        print_str("codec_name", cd->name);
--        if (!do_bitexact) {
--            print_str("codec_long_name",
--                      cd->long_name ? cd->long_name : "unknown");
-+        // Plex's media analyzer maps ffprobe's codec_name to its internal
-+        // codec enum, which has no VVC entry yet (it reports the codec as
-+        // "NONE"). Report VVC as HEVC so Plex recognizes the stream and
-+        // can transcode it (the VVC decoder itself is keyed by codec id,
-+        // not this name).
-+        if (par->codec_id == AV_CODEC_ID_VVC) {
-+            print_str("codec_name", "hevc");
-+            if (!do_bitexact) {
-+                print_str("codec_long_name",
-+                          "HEVC (High Efficiency Video Coding)");
-+            }
-+        } else {
-+            print_str("codec_name", cd->name);
-+            if (!do_bitexact) {
-+                print_str("codec_long_name",
-+                          cd->long_name ? cd->long_name : "unknown");
-+            }
-         }
-     } else {
-         print_str_opt("codec_name", "unknown");
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/Makefile b/plex-ffmpeg-source/PlexTranscoder/libavcodec/Makefile
 index a136e309..b64c78b3 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/Makefile
@@ -142,6 +110,21 @@ index 03d46c46..f7b21d3a 100644
                  slice_idx += pps->num_slices_in_subpic[i];
              }
              width_in_tiles =
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
+index f556bb94..b087cd64 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
+@@ -1437,8 +1437,8 @@ static const AVCodecDescriptor codec_descriptors[] = {
+     {
+         .id        = AV_CODEC_ID_VVC,
+         .type      = AVMEDIA_TYPE_VIDEO,
+-        .name      = "vvc",
+-        .long_name = NULL_IF_CONFIG_SMALL("H.266 / VVC (Versatile Video Coding)"),
++        .name      = "hevc",
++        .long_name = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
+         .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
+         .profiles  = NULL_IF_CONFIG_SMALL(ff_vvc_profiles),
+     },
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/h26x/h2656_deblock_template.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/h26x/h2656_deblock_template.c
 new file mode 100644
 index 00000000..8ed95e75

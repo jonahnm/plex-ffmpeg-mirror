@@ -15,6 +15,7 @@ tools/fetch-plex-ffmpeg.zsh     # downloads + unpacks the source
 tools/apply-vvc-patch.zsh       # reapplies the VVC decoder patch after each sync
 tools/vvc-decoder.patch         # adds the native VVC (H.266) decoder to Plex's source
 tools/build-ffmpeg.zsh          # builds the source into a working ffmpeg
+tools/deploy-plex-vvc.zsh       # installs the built libs into a PMS install
 tools/backfill.zsh              # backfills history from local PMS tarballs
 plex-ffmpeg-source/             # the mirrored source (committed by the workflow)
   PlexTranscoder/               # Plex's single ffmpeg GPL source
@@ -55,10 +56,28 @@ but not the native VVC decoder or VVC-in-Matroska support. After every sync,
 - the VVC decoder is no longer marked `AV_CODEC_CAP_EXPERIMENTAL`, so it
   decodes without `-strict experimental` and no longer prints the
   "experimental codecs are not enabled" warning,
-- Plex integration: ffprobe reports VVC streams as `hevc` (Plex's analyzer
-  maps ffprobe's `codec_name` to its internal codec enum, which has no VVC
-  entry and otherwise shows the codec as "NONE"; the decoder itself is keyed
-  by codec id, so decoding and `-c:v vvc` are unaffected).
+- Plex integration: the VVC codec descriptor now reports `hevc` (Plex's
+  analyzer maps ffmpeg's codec name to its internal codec enum, which has no
+  VVC entry and otherwise shows the codec as "NONE"; the decoder is keyed by
+  codec id, so decoding and `-c:v vvc` are unaffected).
+
+## Deploy to Plex
+
+Plex's `Plex Media Scanner` and `Plex Transcoder` load the shared ffmpeg
+libraries from the PMS lib directory (`libavcodec.so.60`, `libavformat.so.60`,
+...) and do all probing in-process. To make Plex recognize VVC:
+
+```zsh
+# on the Plex host (Debian/Ubuntu), from this repo:
+sudo zsh tools/deploy-plex-vvc.zsh            # builds + installs the libs
+sudo systemctl restart plexmediaserver
+```
+
+then refresh the metadata (or rescan the library) of your VVC items. The
+script backs up Plex's original libraries as `*.orig-vvc` so it can be
+reverted. Without this, Plex shows VVC streams as codec "NONE" even when the
+replacement ffmpeg binary is installed, because its scanner probes media
+in-process with its own bundled libraries.
 
 Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
 `fate-vvc-conformance-*` streams decode bit-identically, and a VVC stream
