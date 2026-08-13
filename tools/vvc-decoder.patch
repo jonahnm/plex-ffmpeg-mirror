@@ -24,17 +24,22 @@ index a136e309..b64c78b3 100644
  OBJS-$(CONFIG_AC3DSP)                  += ac3dsp.o ac3.o ac3tab.o
  OBJS-$(CONFIG_ADTS_HEADER)             += adts_header.o mpeg4audio_sample_rates.o
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
-index 542cc9e4..aaf0ef7a 100644
+index 542cc9e4..8acffdf1 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
 +++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
-@@ -391,6 +391,7 @@ extern const FFCodec ff_vp8_v4l2m2m_decoder;
- extern const FFCodec ff_vp9_decoder;
- extern const FFCodec ff_vp9_rkmpp_decoder;
- extern const FFCodec ff_vp9_v4l2m2m_decoder;
+@@ -165,10 +165,10 @@ extern const FFCodec ff_h264_qsv_decoder;
+ extern const FFCodec ff_h264_rkmpp_decoder;
+ extern const FFCodec ff_hap_encoder;
+ extern const FFCodec ff_hap_decoder;
 +extern const FFCodec ff_vvc_decoder;
- extern const FFCodec ff_vqa_decoder;
- extern const FFCodec ff_vqc_decoder;
- extern const FFCodec ff_wbmp_decoder;
+ extern const FFCodec ff_hevc_decoder;
+ extern const FFCodec ff_hevc_qsv_decoder;
+-extern const FFCodec ff_hevc_rkmpp_decoder;
+-extern const FFCodec ff_hevc_v4l2m2m_decoder;
++extern const FFCodec ff_hevc_rkmpp_decoder;extern const FFCodec ff_hevc_v4l2m2m_decoder;
+ extern const FFCodec ff_hnm4_video_decoder;
+ extern const FFCodec ff_hq_hqa_decoder;
+ extern const FFCodec ff_hqx_decoder;
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c
 index 68c9aede..db803ea3 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c
@@ -22110,7 +22115,7 @@ index 00000000..6c726744
 +#endif // AVCODEC_VVC_VVC_THREAD_H
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c
 new file mode 100644
-index 00000000..57d5bf65
+index 00000000..18cfd57b
 --- /dev/null
 +++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c
 @@ -0,0 +1,1050 @@
@@ -23150,7 +23155,7 @@ index 00000000..57d5bf65
 +}
 +
 +const FFCodec ff_vvc_decoder = {
-+    .p.name         = "vvc",
++    .p.name         = "hevc",
 +    .p.long_name    = NULL_IF_CONFIG_SMALL("VVC (Versatile Video Coding)"),
 +    .p.type         = AVMEDIA_TYPE_VIDEO,
 +    .p.id           = AV_CODEC_ID_VVC,
