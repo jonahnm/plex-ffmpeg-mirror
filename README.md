@@ -42,20 +42,26 @@ distinct source, it lands in `PlexTranscoder-2/`.
 ## VVC (H.266) decoder
 
 Plex's published FFMPEG source ships VVC parsing (`cbs_h266`, `vvc_parser`)
-but not the native VVC decoder. After every sync,
+but not the native VVC decoder or VVC-in-Matroska support. After every sync,
 `tools/apply-vvc-patch.zsh` reapplies `tools/vvc-decoder.patch`, which adds:
 
 - the native VVC decoder (`libavcodec/vvc/`, ported from FFmpeg 7.0) plus the
   shared `libavcodec/h26x/` DSP code it depends on,
 - the `FFRefStructPool` API in `libavcodec/refstruct.[ch]`,
 - a `cbs_h266` fix so the slice-header `curr_subpic_idx` derived value is
-  actually stored (subpicture streams failed without it).
+  actually stored (subpicture streams failed without it),
+- VVC-in-Matroska muxing/demuxing (the `V_MPEGI/ISO/VVC` codec tag and the
+  VCC CodecPrivate writer, ported from FFmpeg 8.0).
 
 Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
-`fate-vvc-conformance-*` streams decode bit-identically (one caveat: streams
-that are monochrome, e.g. `SCALING_A_1`, differ after a gray-to-YUV color
-conversion, because Plex's 6.1-era swscale handles gray range tags
-differently than FFmpeg 7.0's — the decoded frames themselves are identical).
+`fate-vvc-conformance-*` streams decode bit-identically, and a VVC stream
+muxed to MKV and demuxed back decodes bit-identically. Two upstream caveats
+apply to every FFmpeg build (7.0-8.0, including stock): monochrome streams
+(e.g. `SCALING_A_1`) differ after a gray-to-YUV color conversion, because
+the 6.1-era swscale handles gray range tags differently than FFmpeg 7.0's
+(the decoded frames themselves are identical), and the CLI's CFR output
+drops some delayed frames at end-of-stream for VVC-in-MKV (delayed frames
+carry the current packet's PTS; the decoder never set its own).
 
 The patch is applied with zero fuzz; if Plex's source ever drifts so it no
 longer applies, the sync continues with a warning and the patch needs

@@ -3,13 +3,15 @@
 #
 # Plex's published FFMPEG source (FFmpeg 6.1.3-based) ships VVC parsing
 # support (cbs_h266, vvc_parser, vvc_mp4toannexb_bsf) but no native VVC
-# decoder. This patch restores it:
+# decoder and no VVC-in-Matroska support. This patch restores both:
 #   - the native VVC decoder (libavcodec/vvc/, ported from FFmpeg 7.0),
 #   - the shared H.265/6 DSP code it uses (libavcodec/h26x/, x86/...),
 #   - the FFRefStructPool API in libavcodec/refstruct.[ch],
 #   - a cbs_h266 fix: the slice-header derived value curr_subpic_idx was
 #     only computed into a local variable, never stored (breaks streams
-#     with subpictures).
+#     with subpictures),
+#   - VVC-in-Matroska support (libavformat/vvc.c + mkv codec tag and muxer
+#     support, from FFmpeg 8.0).
 # See tools/vvc-decoder.patch.
 #
 # Usage: apply-vvc-patch.zsh [OUT_PATH] [PATCH_FILE]
