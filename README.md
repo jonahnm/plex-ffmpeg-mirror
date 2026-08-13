@@ -12,6 +12,8 @@ of your own is required -- GitHub runs it for you.
 ```
 .github/workflows/refresh.yml   # the scheduled job
 tools/fetch-plex-ffmpeg.zsh     # downloads + unpacks the source
+tools/apply-vvc-patch.zsh       # reapplies the VVC decoder patch after each sync
+tools/vvc-decoder.patch         # adds the native VVC (H.266) decoder to Plex's source
 tools/backfill.zsh              # backfills history from local PMS tarballs
 plex-ffmpeg-source/             # the mirrored source (committed by the workflow)
   PlexTranscoder/               # Plex's single ffmpeg GPL source
@@ -35,6 +37,28 @@ distinct source, it lands in `PlexTranscoder-2/`.
    - downloads and unpacks each into `plex-ffmpeg-source/`.
 3. If the working tree changed, the workflow commits and pushes using the
    built-in `GITHUB_TOKEN`.
+
+## VVC (H.266) decoder
+
+Plex's published FFMPEG source ships VVC parsing (`cbs_h266`, `vvc_parser`)
+but not the native VVC decoder. After every sync,
+`tools/apply-vvc-patch.zsh` reapplies `tools/vvc-decoder.patch`, which adds:
+
+- the native VVC decoder (`libavcodec/vvc/`, ported from FFmpeg 7.0) plus the
+  shared `libavcodec/h26x/` DSP code it depends on,
+- the `FFRefStructPool` API in `libavcodec/refstruct.[ch]`,
+- a `cbs_h266` fix so the slice-header `curr_subpic_idx` derived value is
+  actually stored (subpicture streams failed without it).
+
+Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
+`fate-vvc-conformance-*` streams decode bit-identically (one caveat: streams
+that are monochrome, e.g. `SCALING_A_1`, differ after a gray-to-YUV color
+conversion, because Plex's 6.1-era swscale handles gray range tags
+differently than FFmpeg 7.0's — the decoded frames themselves are identical).
+
+The patch is applied with zero fuzz; if Plex's source ever drifts so it no
+longer applies, the sync continues with a warning and the patch needs
+refreshing from `tools/vvc-decoder.patch`.
 
 ## First-time setup
 

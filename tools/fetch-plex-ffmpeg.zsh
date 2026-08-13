@@ -187,6 +187,9 @@ download_and_extract "$pms_url" "${PMS_PATH}" || die "Failed to download/extract
 
 if get_ffmpeg_archives_from_server; then
     dedupe_identical_sources
+    # Restore the native VVC decoder, which Plex's published source does not
+    # ship (see tools/apply-vvc-patch.zsh and tools/vvc-decoder.patch).
+    zsh "${REPO_PATH}/tools/apply-vvc-patch.zsh" "${OUT_PATH}"
     # Record the Plex version plus the original hash-bearing ffmpeg source
     # folder name (the rename to PlexTranscoder otherwise discards the upstream
     # commit hash).
