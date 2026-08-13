@@ -47,8 +47,10 @@ fi
 #    at all on a GPU-less host. Linking x264 statically into our
 #    libavcodec.so.60 avoids any runtime library path issues.
 typeset -gr X264_PREFIX="${REPO_PATH}/run/x264"
-if [[ ! -x "${X264_PREFIX}/bin/x264" ]]; then
-    echo "== building x264 (static) =="
+# --enable-pic is required: the static library is linked into the shared
+# libavcodec.so.60, and a non-PIC archive cannot be.
+if [[ ! -x "${X264_PREFIX}/bin/x264" || ! -f "${X264_PREFIX}/.deploy-stamp" ]]; then
+    echo "== building x264 (static, PIC) =="
     make_dir() { mkdir -p "$1" || die "failed to create $1"; }
     make_dir "${REPO_PATH}/run"
     if [[ ! -d "${REPO_PATH}/run/x264-src" ]]; then
@@ -56,9 +58,11 @@ if [[ ! -x "${X264_PREFIX}/bin/x264" ]]; then
             || die "failed to clone x264"
     fi
     ( cd "${REPO_PATH}/run/x264-src" \
-        && ./configure --disable-cli --enable-static --prefix="$X264_PREFIX" \
+        && make distclean > /dev/null 2>&1 || true \
+        && ./configure --disable-cli --enable-static --enable-pic --prefix="$X264_PREFIX" \
         && make -j"$(nproc 2> /dev/null || echo 2)" \
         && make install ) || die "x264 build failed"
+    touch "${X264_PREFIX}/.deploy-stamp"
 fi
 export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
