@@ -61,7 +61,7 @@ export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CON
 #    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
-    --enable-libx264 \
+    --enable-gpl --enable-libx264 \
     || die "build failed"
 
 # Sanity check: the build must expose the H.264 encoder and the VVC decoder.
