@@ -51,7 +51,10 @@ but not the native VVC decoder or VVC-in-Matroska support. After every sync,
 - a `cbs_h266` fix so the slice-header `curr_subpic_idx` derived value is
   actually stored (subpicture streams failed without it),
 - VVC-in-Matroska muxing/demuxing (the `V_MPEGI/ISO/VVC` codec tag and the
-  VCC CodecPrivate writer, ported from FFmpeg 8.0).
+  VCC CodecPrivate writer, ported from FFmpeg 8.0),
+- the VVC decoder is no longer marked `AV_CODEC_CAP_EXPERIMENTAL`, so it
+  decodes without `-strict experimental` and no longer prints the
+  "experimental codecs are not enabled" warning.
 
 Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
 `fate-vvc-conformance-*` streams decode bit-identically, and a VVC stream
