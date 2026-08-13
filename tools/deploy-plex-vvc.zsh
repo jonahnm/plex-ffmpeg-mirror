@@ -35,21 +35,48 @@ die() {
 [[ -f "$PMS_LIB/libavcodec.so.60" && -f "$PMS_LIB/libavformat.so.60" ]] || \
     die "Expected Plex's ffmpeg libraries (libavcodec.so.60, libavformat.so.60) in $PMS_LIB"
 
-# 1. Build the mirrored source with shared libraries, forcing a clean
-#    rebuild so the current sources (including the fcntl compatibility
+# 1. Build x264 (software H.264 encoder) as a static library. Plex's own
+#    transcoder build has no software video encoder (--disable-libx264, only
+#    hardware encoders), so without this the server cannot transcode video
+#    at all on a GPU-less host. Linking x264 statically into our
+#    libavcodec.so.60 avoids any runtime library path issues.
+typeset -gr X264_PREFIX="${REPO_PATH}/run/x264"
+if [[ ! -x "${X264_PREFIX}/bin/x264" ]]; then
+    echo "== building x264 (static) =="
+    make_dir() { mkdir -p "$1" || die "failed to create $1"; }
+    make_dir "${REPO_PATH}/run"
+    if [[ ! -d "${REPO_PATH}/run/x264-src" ]]; then
+        git clone --depth 1 https://github.com/mirror/x264.git "${REPO_PATH}/run/x264-src" \
+            || die "failed to clone x264"
+    fi
+    ( cd "${REPO_PATH}/run/x264-src" \
+        && ./configure --disable-cli --enable-static --prefix="$X264_PREFIX" \
+        && make -j"$(nproc 2> /dev/null || echo 2)" \
+        && make install ) || die "x264 build failed"
+fi
+export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+# 2. Build the mirrored source with shared libraries and libx264, forcing a
+#    clean rebuild so the current sources (including the fcntl compatibility
 #    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
+    --enable-libx264 \
     || die "build failed"
 
-# 2. Locate the freshly built libraries.
+# Sanity check: the build must expose the H.264 encoder and the VVC decoder.
+"${SRC_DIR}/ffmpeg" -hide_banner -encoders 2> /dev/null | grep -q libx264 \
+    || die "libx264 encoder not found in the build"
+echo "libx264 encoder: enabled"
+
+# 3. Locate the freshly built libraries.
 local avcodec libavcodec libformat
 avcodec="$(ls "${SRC_DIR}/libavcodec/libavcodec.so."* 2> /dev/null | grep -v '\.so$' | head -1)"
 libformat="$(ls "${SRC_DIR}/libavformat/libavformat.so."* 2> /dev/null | grep -v '\.so$' | head -1)"
 [[ -n "$avcodec" && -n "$libformat" ]] || die "shared libraries not produced (check the build log)"
 echo "Built: ${avcodec:t} (${libformat:t})"
 
-# 3. Pre-flight: the freshly built libraries must be able to resolve all
+# 4. Pre-flight: the freshly built libraries must be able to resolve all
 # their symbols against this host's glibc (ldd -r exits non-zero when any
 # symbol is undefined). Plex builds against an old glibc; a build done on
 # a newer glibc will fail to load here with e.g. "fcntl64: symbol not
@@ -88,6 +115,10 @@ install_lib "$avcodec"  "libavcodec.so.60"
 install_lib "$libformat" "libavformat.so.60"
 
 echo
-echo "Done. Restart Plex Media Server, then refresh the metadata of your"
-echo "VVC items (Plex > item > 'Refresh Metadata') or rescan the library."
+echo "Done. Next steps:"
+echo "  1. Restart Plex Media Server (sudo systemctl restart plexmediaserver)."
+echo "  2. Plex > Settings > Transcoder > enable 'Disable video stream"
+echo "     copying' so VVC is transcoded (libx264) instead of direct-played"
+echo "     to clients that cannot decode it."
+echo "  3. Refresh the metadata of your VVC items, then play."
 echo "To revert: delete the installed libraries and restore the *.orig-vvc backups."

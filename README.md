@@ -79,6 +79,13 @@ reverted. Without this, Plex shows VVC streams as codec "NONE" even when the
 replacement ffmpeg binary is installed, because its scanner probes media
 in-process with its own bundled libraries.
 
+The deploy also builds libx264 and links it statically into the replaced
+`libavcodec.so.60`: Plex's own transcoder build has no software video
+encoder (only hardware VAAPI/NVENC), so on a GPU-less host video transcoding
+is otherwise impossible. With the libs in place, enable Plex > Settings >
+Transcoder > "Disable video stream copying" so VVC streams are transcoded to
+H.264 instead of being direct-played to clients that cannot decode them.
+
 Verified against the upstream FFmpeg 7.0 VVC conformance suite: all 22
 `fate-vvc-conformance-*` streams decode bit-identically, and a VVC stream
 muxed to MKV and demuxed back decodes bit-identically. Two upstream caveats
