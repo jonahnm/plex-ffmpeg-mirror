@@ -35,6 +35,12 @@ die() {
 [[ -f "$PMS_LIB/libavcodec.so.60" && -f "$PMS_LIB/libavformat.so.60" ]] || \
     die "Expected Plex's ffmpeg libraries (libavcodec.so.60, libavformat.so.60) in $PMS_LIB"
 
+# ffmpeg's configure finds libx264 via pkg-config; make sure it exists.
+if ! command -v pkg-config > /dev/null 2>&1; then
+    echo "== installing pkg-config =="
+    apt-get install -y pkg-config || die "pkg-config is required (apt-get install pkg-config)"
+fi
+
 # 1. Build x264 (software H.264 encoder) as a static library. Plex's own
 #    transcoder build has no software video encoder (--disable-libx264, only
 #    hardware encoders), so without this the server cannot transcode video
