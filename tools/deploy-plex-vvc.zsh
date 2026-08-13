@@ -74,17 +74,17 @@ zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     --enable-gpl --enable-libx264 \
     || die "build failed"
 
-# Sanity check: the build must expose the H.264 encoder and the VVC decoder.
-"${SRC_DIR}/ffmpeg" -hide_banner -encoders 2> /dev/null | grep -q libx264 \
-    || die "libx264 encoder not found in the build"
-echo "libx264 encoder: enabled"
-
 # 3. Locate the freshly built libraries.
 local avcodec libavcodec libformat
 avcodec="$(ls "${SRC_DIR}/libavcodec/libavcodec.so."* 2> /dev/null | grep -v '\.so$' | head -1)"
 libformat="$(ls "${SRC_DIR}/libavformat/libavformat.so."* 2> /dev/null | grep -v '\.so$' | head -1)"
 [[ -n "$avcodec" && -n "$libformat" ]] || die "shared libraries not produced (check the build log)"
 echo "Built: ${avcodec:t} (${libformat:t})"
+
+# Sanity check: the library to be deployed must contain the H.264 encoder.
+grep -q "libx264" "$avcodec" \
+    || die "libx264 encoder not found in the build"
+echo "libx264 encoder: enabled"
 
 # 4. Pre-flight: the freshly built libraries must be able to resolve all
 # their symbols against this host's glibc (ldd -r exits non-zero when any
