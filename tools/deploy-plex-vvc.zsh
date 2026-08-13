@@ -70,12 +70,18 @@ if [[ ! -x "${X264_PREFIX}/bin/x264" || ! -f "${X264_PREFIX}/.deploy-stamp-musl"
     fi
     ( cd "${REPO_PATH}/run/x264-src" \
         && make distclean > /dev/null 2>&1 || true \
-        && ./configure --disable-cli --enable-static --enable-pic \
-            --cc="$MUSL_CC" --host=x86_64-linux-musl --prefix="$X264_PREFIX" \
+        && CC="$MUSL_CC" ./configure --disable-cli --enable-static --enable-pic \
+            --host=x86_64-linux-musl --prefix="$X264_PREFIX" \
         && make -j"$(nproc 2> /dev/null || echo 2)" \
         && make install ) || die "x264 build failed"
     touch "${X264_PREFIX}/.deploy-stamp-musl"
 fi
+# x264's configure only honors the CC environment variable; verify the
+# archive was really built against musl headers (no glibc-only symbols).
+if nm "${X264_PREFIX}/lib/libx264.a" 2> /dev/null | grep -qE "__isoc23_|fopen64|fseeko64|ftello64"; then
+    die "x264 was built against glibc headers; the musl toolchain did not take effect"
+fi
+echo "x264: musl build confirmed"
 export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
 # 2. Build the mirrored source with shared libraries and libx264, forcing a
@@ -93,7 +99,11 @@ libformat="$(ls "${SRC_DIR}/libavformat/libavformat.so."* 2> /dev/null | grep -v
 [[ -n "$avcodec" && -n "$libformat" ]] || die "shared libraries not produced (check the build log)"
 echo "Built: ${avcodec:t} (${libformat:t})"
 
-# Sanity check: the library to be deployed must contain the H.264 encoder.
+# Sanity check: the deployed library must be a musl build (NEEDED libc.so,
+# not glibc's libc.so.6) and contain the H.264 encoder.
+if ! readelf -d "$avcodec" 2> /dev/null | grep -q '\[libc\.so\]'; then
+    die "libavcodec is not a musl build (Plex's runtime cannot load it)"
+fi
 grep -q "libx264" "$avcodec" \
     || die "libx264 encoder not found in the build"
 echo "libx264 encoder: enabled"
