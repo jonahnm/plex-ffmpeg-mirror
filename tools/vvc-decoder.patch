@@ -23841,6 +23841,23 @@ index 00000000..33815d67
 +#undef VVC_ITX
 +#undef VVC_ITX_COMMON
 +}
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
+index c661595e..66a0d1ef 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
+@@ -176,7 +176,11 @@ static void set_parser_ctx(AVCodecParserContext *s, AVCodecContext *avctx,
+         h266_sub_height_c[sps->sps_chroma_format_idc];;
+ 
+     avctx->profile = sps->profile_tier_level.general_profile_idc;
+-    avctx->level = sps->profile_tier_level.general_level_idc;
++    /* Plex deployment: report an extreme level so Plex's decision engine
++     * never offers direct play for VVC streams (its DB codec is "hevc",
++     * which clients accept at ordinary levels) and always transcodes.
++     * The decoder parses the real level from the SPS itself. */
++    avctx->level = 255;
+ 
+     avctx->colorspace = (enum AVColorSpace) sps->vui.vui_matrix_coeffs;
+     avctx->color_primaries = (enum AVColorPrimaries) sps->vui.vui_colour_primaries;
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/x86/h26x/h2656_inter.asm b/plex-ffmpeg-source/PlexTranscoder/libavcodec/x86/h26x/h2656_inter.asm
 new file mode 100644
 index 00000000..cbba0c1e
@@ -25855,6 +25872,22 @@ index 5878594e..4c83b9a0 100644
      {"V_MPEG4/MS/V3"    , AV_CODEC_ID_MSMPEG4V3},
      {"V_PRORES"         , AV_CODEC_ID_PRORES},
      {"V_REAL/RV10"      , AV_CODEC_ID_RV10},
+diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
+index 3e123511..3d581e3f 100644
+--- a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
++++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
+@@ -2886,6 +2886,11 @@ static int mkv_parse_video_codec(MatroskaTrack *track, AVCodecParameters *par,
+         if (codec_id == AV_CODEC_ID_NONE)
+             av_log(matroska->ctx, AV_LOG_ERROR,
+                    "mov FourCC not found %s.\n", av_fourcc2str(fourcc));
++        /* Plex deployment: see libavcodec/vvc_parser.c - report an
++         * extreme level so Plex always transcodes VVC instead of direct
++         * playing it (the client cannot decode VVC data). */
++        if (codec_id == AV_CODEC_ID_VVC)
++            par->level = 255;
+         if (track->codec_priv.size >= 86) {
+             FFIOContext b;
+             unsigned bit_depth = AV_RB16(track->codec_priv.data + 82);
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c
 index c1f3fde2..87b55034 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c

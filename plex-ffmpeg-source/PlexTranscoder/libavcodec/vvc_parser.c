@@ -176,7 +176,11 @@ static void set_parser_ctx(AVCodecParserContext *s, AVCodecContext *avctx,
         h266_sub_height_c[sps->sps_chroma_format_idc];;
 
     avctx->profile = sps->profile_tier_level.general_profile_idc;
-    avctx->level = sps->profile_tier_level.general_level_idc;
+    /* Plex deployment: report an extreme level so Plex's decision engine
+     * never offers direct play for VVC streams (its DB codec is "hevc",
+     * which clients accept at ordinary levels) and always transcodes.
+     * The decoder parses the real level from the SPS itself. */
+    avctx->level = 255;
 
     avctx->colorspace = (enum AVColorSpace) sps->vui.vui_matrix_coeffs;
     avctx->color_primaries = (enum AVColorPrimaries) sps->vui.vui_colour_primaries;
