@@ -92,8 +92,8 @@ typeset -gr VVDEC_BUILD="${REPO_PATH}/run/vvdec-build"
 typeset -gr VVDEC_PREFIX="${REPO_PATH}/run/vvdec-prefix"
 typeset -gr VVDEC_TAG="v2.1.0"
 typeset -gr MUSL_CROSS="${REPO_PATH}/run/musl-cross"
-MUSL_CXX="x86_64-linux-musl-g++"
-if ! command -v "$MUSL_CXX" > /dev/null 2>&1; then
+VVDEC_CXX="x86_64-linux-musl-g++"
+if ! command -v "$VVDEC_CXX" > /dev/null 2>&1; then
     if [[ ! -x "${MUSL_CROSS}/bin/x86_64-linux-musl-g++" ]]; then
         echo "== downloading musl-cross toolchain from musl.cc =="
         curl -L --fail -o "${REPO_PATH}/run/musl-cross.tgz" \
@@ -103,9 +103,9 @@ if ! command -v "$MUSL_CXX" > /dev/null 2>&1; then
         tar -xzf "${REPO_PATH}/run/musl-cross.tgz" -C "$MUSL_CROSS" --strip-components=1 \
             || die "failed to extract musl-cross toolchain"
     fi
-    MUSL_CXX="${MUSL_CROSS}/bin/x86_64-linux-musl-g++"
+    VVDEC_CXX="${MUSL_CROSS}/bin/x86_64-linux-musl-g++"
 fi
-MUSL_CC="${MUSL_CXX%g++}gcc"
+VVDEC_CC="${VVDEC_CXX%g++}gcc"
 # The musl.cc gcc driver emits -fno-fat-lto-objects unconditionally for
 # C++ (builtin specs), which its cc1plus rejects (no LTO plugin). Wrap
 # the compiler to filter the flag.
@@ -118,11 +118,11 @@ for a in "\$@"; do
     [[ "\$a" == "-fno-fat-lto-objects" || "\$a" == "-flto" ]] && continue
     args+=("\$a")
 done
-exec "$MUSL_CXX" "\${args[@]}"
+exec "$VVDEC_CXX" "\${args[@]}"
 EOF
     chmod +x "$WRAP"
 fi
-MUSL_CXX="$WRAP"
+VVDEC_CXX="$WRAP"
 
 if [[ -d "$VVDEC_SRC" && -z "$(ls -A "$VVDEC_SRC" 2> /dev/null)" ]]; then
     rmdir "$VVDEC_SRC"
@@ -140,8 +140,8 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     mkdir -p "${VVDEC_SRC}/lib/release-static"
     rm -rf "$VVDEC_BUILD"
     cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
-        -DCMAKE_C_COMPILER="$MUSL_CC" \
-        -DCMAKE_CXX_COMPILER="$MUSL_CXX" \
+        -DCMAKE_C_COMPILER="$VVDEC_CC" \
+        -DCMAKE_CXX_COMPILER="$VVDEC_CXX" \
         -DCMAKE_AR=/usr/bin/ar \
         -DCMAKE_C_COMPILER_AR=/usr/bin/ar \
         -DCMAKE_CXX_COMPILER_AR=/usr/bin/ar \
