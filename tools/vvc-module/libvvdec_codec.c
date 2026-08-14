@@ -120,6 +120,18 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
+    /* Matroska keeps the VVC parameter sets in the CodecPrivate
+     * (extradata); vvdec needs them before any VCL NAL. */
+    if (avctx->extradata && avctx->extradata_size > 0) {
+        vvdecAccessUnit au;
+        vvdecFrame *f = NULL;
+        memset(&au, 0, sizeof(au));
+        au.payload         = avctx->extradata;
+        au.payloadUsedSize = avctx->extradata_size;
+        if (vvdec_decode(s->dec_ctx, &au, &f) == VVDEC_OK && f)
+            vvdec_frame_unref(s->dec_ctx, f);
+    }
+
     return 0;
 }
 
