@@ -88,15 +88,8 @@ export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CON
 #    clean rebuild so the current sources (including the fcntl compatibility
 #    flags) are always compiled in.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
-# --disable-decoder=vvc removes the bundled experimental native VVC
-# decoder from the builtin codec list. The external libvvc_decoder.so
-# module (installed into the Codecs directory below) then becomes the
-# only "vvc" decoder the transcoder can find, so it is used instead of
-# the artifact-prone native one (the fork's codec lookup serves builtin
-# codecs before module-registered ones).
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     --enable-gpl --enable-libx264 --enable-eae --cc="$MUSL_CC" \
-    --disable-decoder=vvc \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
