@@ -76,6 +76,106 @@ static int vvc_buf_append(VVDecContext *s, const uint8_t *data, int size)
     return 0;
 }
 
+/* Convert the vvcC-style CodecPrivate extradata (length-prefixed NALs
+ * with a PTL header) into annex-B and feed it to vvdec. Mirrors the
+ * logic of FFmpeg's vvc_mp4toannexb bitstream filter. */
+static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
+{
+    const uint8_t *e = avctx->extradata;
+    int esize = avctx->extradata_size;
+    int pos = 0, temp, length_size, ptl_present, num_arrays, i, j;
+    uint8_t *out = NULL;
+    int out_size = 0;
+
+    if (esize < 3)
+        return;
+
+    temp = e[pos++];
+    length_size = ((temp & 6) >> 1) + 1;
+    ptl_present = temp & 1;
+
+    if (ptl_present) {
+        int temp2, num_sublayers, num_bytes_constraint_info;
+        int ptl_num_sub_profiles;
+
+        if (pos + 2 > esize)
+            goto done;
+        temp2 = (e[pos] << 8) | e[pos + 1];
+        pos += 2;
+        num_sublayers = (temp2 >> 4) & 0x7;
+
+        if (pos >= esize)
+            goto done;
+        num_bytes_constraint_info = e[pos] & 0x3f;
+        pos += 1;                       /* temp3 */
+        if (pos + 2 + num_bytes_constraint_info - 1 > esize)
+            goto done;
+        pos += 1;                       /* temp4: profile/tier */
+        pos += 1;                       /* general_level_idc */
+        pos += num_bytes_constraint_info - 1;
+
+        if (num_sublayers > 1) {
+            if (pos >= esize)
+                goto done;
+            pos += 1;                   /* temp6: sublayer flags */
+        }
+
+        if (pos >= esize)
+            goto done;
+        ptl_num_sub_profiles = e[pos++];
+        if (pos + 4 * ptl_num_sub_profiles + 6 > esize)
+            goto done;
+        pos += 4 * ptl_num_sub_profiles; /* general_sub_profile_idc */
+        pos += 6;                        /* max width/height, frame rate */
+    }
+
+    if (pos >= esize)
+        goto done;
+    num_arrays = e[pos++];
+
+    for (i = 0; i < num_arrays && pos + 3 <= esize; i++) {
+        int type = e[pos] & 0x1f;
+        int cnt;
+        pos += 1;
+        if (type == 12 || type == 13)   /* VVC_OPI_NUT / VVC_DCI_NUT */
+            cnt = 1;
+        else {
+            cnt = (e[pos] << 8) | e[pos + 1];
+            pos += 2;
+        }
+        for (j = 0; j < cnt; j++) {
+            int nalu_len;
+            uint8_t *nb;
+            if (pos + 2 > esize)
+                goto done;
+            nalu_len = (e[pos] << 8) | e[pos + 1];
+            pos += 2;
+            if (pos + nalu_len > esize)
+                goto done;
+            nb = av_realloc(out, out_size + nalu_len + 4 + 64);
+            if (!nb)
+                goto done;
+            out = nb;
+            AV_WB32(out + out_size, 1); /* 00 00 00 01 start code */
+            memcpy(out + out_size + 4, e + pos, nalu_len);
+            out_size += 4 + nalu_len;
+            pos += nalu_len;
+        }
+    }
+
+done:
+    if (out && out_size > 0) {
+        vvdecAccessUnit au;
+        vvdecFrame *f = NULL;
+        memset(&au, 0, sizeof(au));
+        au.payload         = out;
+        au.payloadUsedSize = out_size;
+        if (vvdec_decode(s->dec_ctx, &au, &f) == VVDEC_OK && f)
+            vvdec_frame_unref(s->dec_ctx, f);
+    }
+    av_free(out);
+}
+
 static void libvvdec_flush(AVCodecContext *avctx)
 {
     VVDecContext *s = avctx->priv_data;
@@ -121,23 +221,10 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     }
 
     /* Matroska keeps the VVC parameter sets in the CodecPrivate
-     * (extradata); vvdec needs them before any VCL NAL. */
-    if (avctx->extradata && avctx->extradata_size > 0) {
-        vvdecAccessUnit au;
-        vvdecFrame *f = NULL;
-        int n = avctx->extradata_size;
-        const uint8_t *e = avctx->extradata;
-        av_log(avctx, AV_LOG_ERROR,
-               "extradata %d bytes: %02x %02x %02x %02x %02x %02x %02x %02x "
-               "%02x %02x %02x %02x %02x %02x %02x %02x\n",
-               n, e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7],
-               e[8], e[9], e[10], e[11], e[12], e[13], e[14], e[15]);
-        memset(&au, 0, sizeof(au));
-        au.payload         = avctx->extradata;
-        au.payloadUsedSize = avctx->extradata_size;
-        if (vvdec_decode(s->dec_ctx, &au, &f) == VVDEC_OK && f)
-            vvdec_frame_unref(s->dec_ctx, f);
-    }
+     * (extradata), length-prefixed; convert to annex-B and feed vvdec
+     * before any VCL NAL. */
+    if (avctx->extradata && avctx->extradata_size > 0)
+        vvc_feed_extradata(avctx, s);
 
     return 0;
 }
