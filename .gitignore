@@ -4,3 +4,6 @@ run/
 *.txz
 /Plex Media Scanner
 /Plex Media Server
+/libh264_decoder.so
+/libhevc_decoder.so
+__pycache__/
