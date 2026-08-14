@@ -165,7 +165,7 @@ echo "libvvdec: ${VVDEC_PREFIX}/lib/libvvdec.a"
 #     and hook it into the build.
 cp "${SCRIPT_PATH}/vvc-module/libvvdec_ffmpeg.c" "${SRC_DIR}/libavcodec/libvvdec.c"
 if ! grep -q "libvvdec.o" "${SRC_DIR}/libavcodec/Makefile"; then
-    sed -i '0,/^OBJS += /s//OBJS += libvvdec.o\n&/' "${SRC_DIR}/libavcodec/Makefile" \
+    echo "OBJS += libvvdec.o" >> "${SRC_DIR}/libavcodec/Makefile" \
         || die "failed to patch libavcodec/Makefile"
 fi
 
