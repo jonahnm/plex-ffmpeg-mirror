@@ -182,7 +182,7 @@ fi
 # 2c. Build the mirrored source with shared libraries and libx264,
 #     forcing a clean rebuild. The native vvc decoder is disabled; the
 #     libvvdec-based one (registered post-configure) replaces it.
-MUSL_STDCXX="$(ls "${MUSL_CROSS}"/lib/gcc/x86_64-linux-musl/*/libstdc++.a 2> /dev/null | head -1)"
+MUSL_STDCXX="$(ls "${MUSL_CROSS}"/x86_64-linux-musl/lib/libstdc++.a 2> /dev/null | head -1)"
 MUSL_LIBGCC="$(ls "${MUSL_CROSS}"/lib/gcc/x86_64-linux-musl/*/libgcc.a 2> /dev/null | head -1)"
 [[ -n "$MUSL_STDCXX" && -n "$MUSL_LIBGCC" ]] \
     || die "musl-cross libstdc++.a/libgcc.a not found in $MUSL_CROSS"
