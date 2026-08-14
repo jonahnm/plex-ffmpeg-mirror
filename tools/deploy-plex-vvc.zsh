@@ -188,7 +188,7 @@ zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     --disable-decoder=vvc \
     --extra-cflags="-I${VVDEC_PREFIX}/include/vvdec -I${VVDEC_PREFIX}/include" \
     --extra-ldflags="-L${VVDEC_PREFIX}/lib" \
-    --extra-libs="-static-libstdc++ -lvvdec -lpthread" \
+    --extra-libs="-lstdc++ -lvvdec -lpthread" \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
