@@ -62,12 +62,25 @@ command -v "$MUSL_CC" > /dev/null 2>&1 || MUSL_CC="${MUSL_CXX:h}/x86_64-linux-mu
     || die "musl C compiler not found ($MUSL_CC)"
 echo "== musl C++: $MUSL_CXX =="
 
-# The musl.cc gcc driver spec emits -fno-fat-lto-objects unconditionally
-# for C++, which its cc1plus rejects (no LTO plugin). Strip it from the
-# spec files in the toolchain prefix.
-for spec in "${MUSL_CXX:h:h}"/lib/gcc/x86_64-linux-musl/*/specs; do
-    [[ -f "$spec" ]] && sed -i 's/-fno-fat-lto-objects//g' "$spec"
+# The musl.cc gcc driver emits -fno-fat-lto-objects unconditionally for
+# C++ (builtin specs), which its cc1plus rejects (no LTO plugin). Wrap
+# the compiler to filter the flag.
+if [[ "$MUSL_CXX" == "${MUSL_CROSS}/bin/"* ]]; then
+    WRAP="${REPO_PATH}/run/musl-gxx-wrap"
+    if [[ ! -x "$WRAP" ]]; then
+        cat > "$WRAP" <<EOF
+#!/bin/zsh
+args=()
+for a in "\$@"; do
+    [[ "\$a" == "-fno-fat-lto-objects" || "\$a" == "-flto" ]] && continue
+    args+=("\$a")
 done
+exec "$MUSL_CXX" "\${args[@]}"
+EOF
+        chmod +x "$WRAP"
+    fi
+    MUSL_CXX="$WRAP"
+fi
 
 # 2. Build libvvdec (Fraunhofer VVC reference decoder) with musl.
 if [[ -d "$VVDEC_SRC" && -z "$(ls -A "$VVDEC_SRC" 2> /dev/null)" ]]; then
