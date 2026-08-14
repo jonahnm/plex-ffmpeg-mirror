@@ -58,8 +58,7 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     if (!params)
         return AVERROR(ENOMEM);
     vvdec_params_default(params);
-    params->logLevel      = VVDEC_SILENT;
-    params->removePadding = true;
+    params->logLevel = VVDEC_ERROR;
 
     s->dec_ctx = vvdec_decoder_open(params);
     vvdec_params_free(params);
@@ -187,7 +186,9 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     }
 
     if (ret != VVDEC_OK && ret != VVDEC_TRY_AGAIN && ret != VVDEC_EOF) {
-        av_log(avctx, AV_LOG_ERROR, "Error decoding VVC NAL unit.\n");
+        av_log(avctx, AV_LOG_ERROR,
+               "Error decoding VVC NAL unit (vvdec ret=%d, %zu bytes)\n",
+               ret, pkt->size);
         return AVERROR_EXTERNAL;
     }
 
