@@ -274,8 +274,20 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     /* Matroska keeps the VVC parameter sets in the CodecPrivate
      * (extradata), length-prefixed; convert to annex-B and feed vvdec
      * before any VCL NAL. */
-    if (avctx->extradata && avctx->extradata_size > 0)
+    if (avctx->extradata && avctx->extradata_size > 0) {
+        int n = avctx->extradata_size;
+        const uint8_t *e = avctx->extradata;
+        int off;
+        for (off = 0; off < n; off += 16) {
+            av_log(avctx, AV_LOG_ERROR, "ED %03d: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                   off,
+                   e[off], e[off+1], e[off+2], e[off+3],
+                   e[off+4], e[off+5], e[off+6], e[off+7],
+                   e[off+8], e[off+9], e[off+10], e[off+11],
+                   e[off+12], e[off+13], e[off+14], e[off+15]);
+        }
         vvc_feed_extradata(avctx, s);
+    }
 
     return 0;
 }
