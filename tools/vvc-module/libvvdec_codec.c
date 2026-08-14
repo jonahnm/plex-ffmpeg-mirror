@@ -12,7 +12,6 @@
 
 #include "libavcodec/avcodec.h"
 #include "libavcodec/codec_internal.h"
-#include "libavcodec/decode.h"
 #include "libavcodec/internal.h"
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
@@ -33,20 +32,21 @@ typedef struct VVDecContext {
 static int vvc_nal_type(const uint8_t *pkt, int size)
 {
     if (size >= 6 && pkt[0] == 0 && pkt[1] == 0 && pkt[2] == 0 && pkt[3] == 1)
-        return (pkt[4] & 0x07) << 3 | (pkt[5] >> 5);
+        return (pkt[4] & 0x03) << 3 | (pkt[5] >> 5);
     if (size >= 5 && pkt[0] == 0 && pkt[1] == 0 && pkt[2] == 1)
-        return (pkt[3] & 0x07) << 3 | (pkt[4] >> 5);
+        return (pkt[3] & 0x03) << 3 | (pkt[4] >> 5);
     return -1;
 }
 
-/* Non-VCL NALs (OPI, APS, SEI, VPS, SPS, PPS, AUD, ...) must be fed to
- * the decoder together with the following VCL access unit; on their own
+/* Non-VCL NALs (OPI, APS, SEI, VPS, SPS, PPS) must be fed to the
+ * decoder together with the following VCL access unit; on their own
  * vvdec rejects them (VVDEC_ERR_DEC_INPUT). */
 static int vvc_nal_is_vcl(int type)
 {
     switch (type) {
     case 6:   /* OPI */
     case 12:  /* OPI (alternate id) */
+    case 13:  /* DCI */
     case 15:  /* PREFIX_APS */
     case 16:  /* SUFFIX_APS */
     case 17:  /* PREFIX_SEI */
@@ -77,110 +77,79 @@ static int vvc_buf_append(VVDecContext *s, const uint8_t *data, int size)
 }
 
 /* Convert the vvcC-style CodecPrivate extradata (length-prefixed NALs
- * with a PTL header) into annex-B and feed it to vvdec. Mirrors the
- * logic of FFmpeg's vvc_mp4toannexb bitstream filter. */
+ * with a PTL header) into annex-B and feed it to vvdec. The PTL length
+ * varies (constraint bytes, sublayer levels, sub-profiles); instead of
+ * parsing it bit-exactly, scan for the parameter-set arrays: an array is
+ * {type, cnt(be16), [len(be16), NAL]*cnt} where the NALs' lengths must
+ * fit the buffer and the last NAL ends near the buffer end. */
 static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
 {
     const uint8_t *e = avctx->extradata;
     int esize = avctx->extradata_size;
-    int pos = 0, temp, length_size, ptl_present, num_arrays, i, j;
     uint8_t *out = NULL;
     int out_size = 0;
+    int start = -1, i;
 
-    if (esize < 3)
+    if (esize < 8)
         return;
 
-    temp = e[pos++];
-    length_size = ((temp & 6) >> 1) + 1;
-    ptl_present = temp & 1;
-    av_log(avctx, AV_LOG_ERROR,
-           "vvcC: temp %d length_size %d ptl %d esize %d\n",
-           temp, length_size, ptl_present, esize);
+    for (i = 8; i < esize - 4 && start < 0; i++) {
+        int type = e[i] & 0x1f;
+        int cnt, pos, j, ok;
 
-    if (ptl_present) {
-        int temp2, num_sublayers, num_bytes_constraint_info;
-        int ptl_num_sub_profiles;
-
-        if (pos + 2 > esize)
-            goto done;
-        temp2 = (e[pos] << 8) | e[pos + 1];
-        pos += 2;
-        num_sublayers = (temp2 >> 4) & 0x7;
-
-        if (pos >= esize)
-            goto done;
-        num_bytes_constraint_info = e[pos] & 0x3f;
-        pos += 1;                       /* temp3 */
-        av_log(avctx, AV_LOG_ERROR,
-               "vvcC: nsub %d ncbi %d pos %d\n",
-               num_sublayers, num_bytes_constraint_info, pos);
-        if (pos + 2 + num_bytes_constraint_info - 1 > esize)
-            goto done;
-        pos += 1;                       /* temp4: profile/tier */
-        pos += 1;                       /* general_level_idc */
-        pos += num_bytes_constraint_info - 1;
-
-        if (num_sublayers > 1) {
-            int flags, k;
-            if (pos >= esize)
-                goto done;
-            flags = e[pos++];           /* ptl_sublayer_level_present_flag */
-            for (k = 0; k < num_sublayers - 1; k++) {
-                if (flags & (0x80 >> k))
-                    pos += 1;           /* sublayer_level_idc */
+        switch (type) {
+        case 12: case 13: case 15: case 16: case 17: case 18:
+        case 19: case 20: case 21:
+            break;
+        default:
+            continue;
+        }
+        cnt = (e[i + 1] << 8) | e[i + 2];
+        if (cnt < 1 || cnt > 16)
+            continue;
+        pos = i + 3;
+        ok = 1;
+        for (j = 0; j < cnt; j++) {
+            int len;
+            if (pos + 2 > esize) {
+                ok = 0;
+                break;
             }
+            len = (e[pos] << 8) | e[pos + 1];
+            pos += 2;
+            if (len < 4 || pos + len > esize) {
+                ok = 0;
+                break;
+            }
+            pos += len;
         }
-
-        if (pos >= esize)
-            goto done;
-        ptl_num_sub_profiles = e[pos++];
-        av_log(avctx, AV_LOG_ERROR,
-               "vvcC: subprof %d pos %d (limit %d)\n",
-               ptl_num_sub_profiles, pos, esize);
-        if (pos >= 8 && pos <= esize - 16) {
-            av_log(avctx, AV_LOG_ERROR,
-                   "vvcC: raw2[%d..%d]: %02x %02x %02x %02x %02x %02x %02x %02x "
-                   "%02x %02x %02x %02x %02x %02x %02x %02x\n",
-                   pos - 8, pos + 7,
-                   e[pos - 8], e[pos - 7], e[pos - 6], e[pos - 5],
-                   e[pos - 4], e[pos - 3], e[pos - 2], e[pos - 1],
-                   e[pos], e[pos + 1], e[pos + 2], e[pos + 3],
-                   e[pos + 4], e[pos + 5], e[pos + 6], e[pos + 7]);
-        }
-        if (pos + 4 * ptl_num_sub_profiles + 6 > esize)
-            goto done;
-        pos += 4 * ptl_num_sub_profiles; /* general_sub_profile_idc */
-        pos += 6;                        /* max width/height, frame rate */
+        if (ok && esize - pos <= 8)
+            start = i;
     }
 
-    if (pos >= esize)
-        goto done;
-    num_arrays = e[pos++];
-    av_log(avctx, AV_LOG_ERROR,
-           "vvcC: pos after PTL %d, num_arrays %d\n", pos - 1, num_arrays);
+    if (start < 0)
+        return;
 
-    for (i = 0; i < num_arrays && pos + 3 <= esize; i++) {
-        int type = e[pos] & 0x1f;
-        int cnt;
-        pos += 1;
-        if (type == 12 || type == 13)   /* VVC_OPI_NUT / VVC_DCI_NUT */
-            cnt = 1;
-        else {
-            cnt = (e[pos] << 8) | e[pos + 1];
-            pos += 2;
+    for (i = start; i < esize; ) {
+        int type = e[i] & 0x1f;
+        int pos = i;
+        int cnt = 1;
+        int j;
+
+        if (type != 12 && type != 13) {
+            cnt = (e[i + 1] << 8) | e[i + 2];
+            pos += 3;
+        } else {
+            pos += 1;
         }
-        av_log(avctx, AV_LOG_ERROR, "vvcC: array %d type %d cnt %d\n",
-               i, type, cnt);
-        for (j = 0; j < cnt; j++) {
-            int nalu_len;
+
+        for (j = 0; j < cnt && pos + 2 <= esize; j++) {
+            int len = (e[pos] << 8) | e[pos + 1];
             uint8_t *nb;
-            if (pos + 2 > esize)
-                goto done;
-            nalu_len = (e[pos] << 8) | e[pos + 1];
             pos += 2;
-            if (pos + nalu_len > esize)
-                goto done;
-            nb = av_realloc(out, out_size + nalu_len + 4 + 64);
+            if (pos + len > esize)
+                break;
+            nb = av_realloc(out, out_size + len + 4 + 64);
             if (!nb)
                 goto done;
             out = nb;
@@ -188,10 +157,13 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
             out[out_size + 1] = 0;
             out[out_size + 2] = 0;
             out[out_size + 3] = 1;
-            memcpy(out + out_size + 4, e + pos, nalu_len);
-            out_size += 4 + nalu_len;
-            pos += nalu_len;
+            memcpy(out + out_size + 4, e + pos, len);
+            out_size += 4 + len;
+            pos += len;
         }
+        if (pos > esize)
+            break;
+        i = pos;
     }
 
 done:
@@ -203,26 +175,12 @@ done:
         au.payload         = out;
         au.payloadUsedSize = out_size;
         dr = vvdec_decode(s->dec_ctx, &au, &f);
-        av_log(avctx, AV_LOG_ERROR,
-               "extradata feed: %d bytes, head %02x %02x %02x %02x %02x %02x, "
-               "types ", out_size, out[0], out[1], out[2], out[3],
-               out[4], out[5]);
-        for (j = 0; j + 5 < out_size; ) {
-            int t;
-            while (j + 4 < out_size &&
-                   !(out[j] == 0 && out[j + 1] == 0 && out[j + 2] == 0 && out[j + 3] == 1))
-                j++;
-            if (j + 5 >= out_size)
-                break;
-            t = (out[j + 4] & 0x03) << 3 | (out[j + 5] >> 5);
-            av_log(avctx, AV_LOG_ERROR, "%d ", t);
-            j += 6;
-        }
-        av_log(avctx, AV_LOG_ERROR, "(vvdec ret=%d)\n", dr);
+        if (dr != VVDEC_OK)
+            av_log(avctx, AV_LOG_ERROR,
+                   "vvdec rejected the parameter sets (ret=%d, %d bytes)\n",
+                   dr, out_size);
         if (dr == VVDEC_OK && f)
             vvdec_frame_unref(s->dec_ctx, f);
-    } else {
-        av_log(avctx, AV_LOG_ERROR, "extradata conversion produced nothing\n");
     }
     av_free(out);
 }
@@ -274,20 +232,8 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     /* Matroska keeps the VVC parameter sets in the CodecPrivate
      * (extradata), length-prefixed; convert to annex-B and feed vvdec
      * before any VCL NAL. */
-    if (avctx->extradata && avctx->extradata_size > 0) {
-        int n = avctx->extradata_size;
-        const uint8_t *e = avctx->extradata;
-        int off;
-        for (off = 0; off < n; off += 16) {
-            av_log(avctx, AV_LOG_ERROR, "ED %03d: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                   off,
-                   e[off], e[off+1], e[off+2], e[off+3],
-                   e[off+4], e[off+5], e[off+6], e[off+7],
-                   e[off+8], e[off+9], e[off+10], e[off+11],
-                   e[off+12], e[off+13], e[off+14], e[off+15]);
-        }
+    if (avctx->extradata && avctx->extradata_size > 0)
         vvc_feed_extradata(avctx, s);
-    }
 
     return 0;
 }
@@ -351,7 +297,6 @@ static enum AVPixelFormat vvdec_pix_fmt(const vvdecFrame *dec_frame)
 static int libvvdec_copy_frame(AVCodecContext *avctx, AVFrame *frame,
                                const vvdecFrame *dec_frame)
 {
-    const AVPixFmtDescriptor *desc;
     enum AVPixelFormat pix_fmt;
     int ret, i;
 
@@ -360,7 +305,6 @@ static int libvvdec_copy_frame(AVCodecContext *avctx, AVFrame *frame,
         av_log(avctx, AV_LOG_ERROR, "Unsupported output format.\n");
         return AVERROR(EINVAL);
     }
-    desc = av_pix_fmt_desc_get(pix_fmt);
 
     frame->format = pix_fmt;
     frame->width  = dec_frame->width;
@@ -418,15 +362,7 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     if (ret != VVDEC_OK && ret != VVDEC_TRY_AGAIN && ret != VVDEC_EOF) {
         av_log(avctx, AV_LOG_ERROR,
-               "Error decoding VVC NAL unit (vvdec ret=%d, %zu bytes)\n",
-               ret, pkt->size);
-        av_log(avctx, AV_LOG_ERROR,
-               "input head: %02x %02x %02x %02x %02x %02x %02x %02x "
-               "%02x %02x %02x %02x %02x %02x %02x %02x\n",
-               pkt->data[0], pkt->data[1], pkt->data[2], pkt->data[3],
-               pkt->data[4], pkt->data[5], pkt->data[6], pkt->data[7],
-               pkt->data[8], pkt->data[9], pkt->data[10], pkt->data[11],
-               pkt->data[12], pkt->data[13], pkt->data[14], pkt->data[15]);
+               "Error decoding VVC NAL unit (vvdec ret=%d)\n", ret);
         return AVERROR_EXTERNAL;
     }
 
