@@ -140,6 +140,12 @@ static int libvvdec_copy_frame(AVCodecContext *avctx, AVFrame *frame,
     }
     desc = av_pix_fmt_desc_get(pix_fmt);
 
+    avctx->pix_fmt      = pix_fmt;
+    avctx->width        = dec_frame->width;
+    avctx->height       = dec_frame->height;
+    avctx->coded_width  = dec_frame->width;
+    avctx->coded_height = dec_frame->height;
+
     frame->format = pix_fmt;
     frame->width  = dec_frame->width;
     frame->height = dec_frame->height;
