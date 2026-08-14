@@ -121,9 +121,14 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
         pos += num_bytes_constraint_info - 1;
 
         if (num_sublayers > 1) {
+            int flags, k;
             if (pos >= esize)
                 goto done;
-            pos += 1;                   /* temp6: sublayer flags */
+            flags = e[pos++];           /* ptl_sublayer_level_present_flag */
+            for (k = 0; k < num_sublayers - 1; k++) {
+                if (flags & (0x80 >> k))
+                    pos += 1;           /* sublayer_level_idc */
+            }
         }
 
         if (pos >= esize)
