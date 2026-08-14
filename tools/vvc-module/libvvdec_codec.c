@@ -77,93 +77,75 @@ static int vvc_buf_append(VVDecContext *s, const uint8_t *data, int size)
 }
 
 /* Convert the vvcC-style CodecPrivate extradata (length-prefixed NALs
- * with a PTL header) into annex-B and feed it to vvdec. The PTL length
- * varies (constraint bytes, sublayer levels, sub-profiles); instead of
- * parsing it bit-exactly, scan for the parameter-set arrays: an array is
- * {type, cnt(be16), [len(be16), NAL]*cnt} where the NALs' lengths must
- * fit the buffer and the last NAL ends near the buffer end. */
+ * with a PTL header) into annex-B and feed it to vvdec. Field layout
+ * mirrors FFmpeg's cbs_h2645.c VVCC parsing exactly. */
 static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
 {
     const uint8_t *e = avctx->extradata;
     int esize = avctx->extradata_size;
     uint8_t *out = NULL;
     int out_size = 0;
-    int start = -1, i;
+    int pos = 0, b, i, j;
 
     if (esize < 8)
         return;
 
-    for (i = 8; i < esize - 4 && start < 0; i++) {
-        int type = e[i] & 0x1f;
-        int cnt, pos, j, ok;
+    b = e[pos++];                       /* length_size + ptl_present_flag */
+    if (!(b & 1))
+        return;                         /* no PTL; not the expected format */
 
-        switch (type) {
-        case 12: case 13: case 15: case 16: case 17: case 18:
-        case 19: case 20: case 21:
-            break;
-        default:
-            continue;
-        }
-        cnt = (e[i + 1] << 8) | e[i + 2];
-        if (cnt < 1 || cnt > 16)
-            continue;
-        pos = i + 3;
-        ok = 1;
-        for (j = 0; j < cnt; j++) {
-            int len;
-            if (pos + 2 > esize) {
-                ok = 0;
-                break;
+    b = (e[pos] << 8) | e[pos + 1];     /* ols_idx, num_sublayers, ... */
+    pos += 2;
+    {
+        int num_sublayers = (b >> 4) & 7;
+        int ncbi, flags, nsubp;
+
+        pos += 1;                       /* bit_depth_minus8 byte */
+        ncbi = e[pos] & 0x3f;
+        pos += 1;
+        pos += 2 + ncbi;                /* profile/tier+level, constraint */
+        if (num_sublayers > 1) {
+            flags = e[pos++];
+            for (i = num_sublayers - 2; i >= 0; i--) {
+                if ((flags >> (7 - (num_sublayers - 2 - i))) & 1)
+                    pos += 1;           /* sublayer_level_idc */
             }
-            len = (e[pos] << 8) | e[pos + 1];
-            pos += 2;
-            if (len < 4 || pos + len > esize) {
-                ok = 0;
-                break;
-            }
-            pos += len;
         }
-        if (ok && esize - pos <= 8)
-            start = i;
+        nsubp = e[pos++];
+        pos += nsubp * 4 + 6;           /* sub-profiles, size/frame rate */
     }
 
-    if (start < 0)
-        return;
-
-    for (i = start; i < esize; ) {
-        int type = e[i] & 0x1f;
-        int pos = i;
-        int cnt = 1;
-        int j;
-
-        if (type != 12 && type != 13) {
-            cnt = (e[i + 1] << 8) | e[i + 2];
-            pos += 3;
-        } else {
+    {
+        int num_arrays = e[pos++];
+        for (i = 0; i < num_arrays && pos + 3 <= esize; i++) {
+            int type = e[pos] & 0x1f;
+            int cnt;
             pos += 1;
+            if (type == 12 || type == 13)   /* VVC_OPI_NUT / VVC_DCI_NUT */
+                cnt = 1;
+            else {
+                cnt = (e[pos] << 8) | e[pos + 1];
+                pos += 2;
+            }
+            for (j = 0; j < cnt && pos + 2 <= esize; j++) {
+                int len = (e[pos] << 8) | e[pos + 1];
+                uint8_t *nb;
+                pos += 2;
+                if (pos + len > esize)
+                    break;
+                nb = av_realloc(out, out_size + len + 4 + 64);
+                if (!nb)
+                    goto done;
+                out = nb;
+                out[out_size]     = 0;   /* 00 00 00 01 start code */
+                out[out_size + 1] = 0;
+                out[out_size + 2] = 0;
+                out[out_size + 3] = 1;
+                memcpy(out + out_size + 4, e + pos, len);
+                out_size += 4 + len;
+                pos += len;
+            }
         }
-
-        for (j = 0; j < cnt && pos + 2 <= esize; j++) {
-            int len = (e[pos] << 8) | e[pos + 1];
-            uint8_t *nb;
-            pos += 2;
-            if (pos + len > esize)
-                break;
-            nb = av_realloc(out, out_size + len + 4 + 64);
-            if (!nb)
-                goto done;
-            out = nb;
-            out[out_size]     = 0;   /* 00 00 00 01 start code */
-            out[out_size + 1] = 0;
-            out[out_size + 2] = 0;
-            out[out_size + 3] = 1;
-            memcpy(out + out_size + 4, e + pos, len);
-            out_size += 4 + len;
-            pos += len;
-        }
-        if (pos > esize)
-            break;
-        i = pos;
     }
 
 done:
