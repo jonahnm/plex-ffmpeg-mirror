@@ -189,6 +189,13 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         av_log(avctx, AV_LOG_ERROR,
                "Error decoding VVC NAL unit (vvdec ret=%d, %zu bytes)\n",
                ret, pkt->size);
+        av_log(avctx, AV_LOG_ERROR,
+               "input head: %02x %02x %02x %02x %02x %02x %02x %02x "
+               "%02x %02x %02x %02x %02x %02x %02x %02x\n",
+               pkt->data[0], pkt->data[1], pkt->data[2], pkt->data[3],
+               pkt->data[4], pkt->data[5], pkt->data[6], pkt->data[7],
+               pkt->data[8], pkt->data[9], pkt->data[10], pkt->data[11],
+               pkt->data[12], pkt->data[13], pkt->data[14], pkt->data[15]);
         return AVERROR_EXTERNAL;
     }
 
