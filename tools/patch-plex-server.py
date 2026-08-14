@@ -244,7 +244,6 @@ def main():
                 if struct.unpack_from("<Q", data, off + 40)[0] < new_filesz:
                     struct.pack_into("<Q", data, off + 40, new_filesz)
 
-        dyn = section(data, ".dynamic")
         for off in range(dyn[0], dyn[0] + dyn[1], 16):
             tag = struct.unpack_from("<q", data, off)[0]
             if tag == 7:
