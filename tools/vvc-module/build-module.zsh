@@ -134,6 +134,7 @@ echo "libvvdec: ${VVDEC_PREFIX}/lib/libvvdec.a"
 #    runtime linked statically so the .so loads in the musl transcoder.
 echo "== building libvvc_decoder.so =="
 "$MUSL_CXX" -shared -fPIC -O2 -o "$OUT" \
+    -x c \
     -I"${SRC_DIR}" \
     -I"${VVDEC_PREFIX}/include" \
     -I"${VVDEC_PREFIX}/include/vvdec" \
