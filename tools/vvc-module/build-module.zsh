@@ -36,6 +36,17 @@ command -v cmake > /dev/null 2>&1 \
 mkdir -p "${REPO_PATH}/run"
 
 # 1. Build libvvdec (Fraunhofer VVC reference decoder) with musl.
+#    vvdec is C++; prefer the musl C++ wrapper, fall back to the system
+#    g++ (glibc) with an explicit archiver when it is unavailable.
+MUSL_CXX="x86_64-linux-musl-g++"
+EXTRA_LIBS=()
+if command -v "$MUSL_CXX" > /dev/null 2>&1; then
+    echo "== libvvdec C++ compiler: $MUSL_CXX =="
+else
+    echo "WARNING: $MUSL_CXX not found; using system g++ (glibc objects)."
+    MUSL_CXX="g++"
+    EXTRA_LIBS=(-lstdc++)
+fi
 if [[ -d "$VVDEC_SRC" && -z "$(ls -A "$VVDEC_SRC" 2> /dev/null)" ]]; then
     echo "== removing empty vvdec checkout =="
     rmdir "$VVDEC_SRC"
@@ -50,6 +61,8 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     echo "== building libvvdec (musl, static) =="
     cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
         -DCMAKE_C_COMPILER=x86_64-linux-musl-gcc \
+        -DCMAKE_CXX_COMPILER="$MUSL_CXX" \
+        -DCMAKE_CXX_COMPILER_AR=/usr/bin/ar \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_INSTALL_PREFIX="$VVDEC_PREFIX" \
@@ -70,7 +83,7 @@ x86_64-linux-musl-gcc -shared -fPIC -O2 -o "$OUT" \
     "${SCRIPT_PATH}/module.c" \
     "${SCRIPT_PATH}/libvvdec_codec.c" \
     "${VVDEC_PREFIX}/lib/libvvdec.a" \
-    -lm -lpthread \
+    -lm -lpthread "${EXTRA_LIBS[@]}" \
     || die "module build failed"
 
 nm -D "$OUT" | grep -q "T av_init_library" \
