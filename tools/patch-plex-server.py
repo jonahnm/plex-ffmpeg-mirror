@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Patch Plex Media Server to treat VVC as a convertible decoder.
 
-Plex's server keeps a decoder-implementation registry: a table of
-{name, module} entries (stride 0x38) walked by a lookup function that
-loops over a hardcoded count. Codecs absent from it cannot be transcoded
-("Cannot convert this item. Implementation for video decoder ... not
-found.").
+Plex's transcode decision checks the codec-implementation registry: a
+table of {name, module} entries (stride 0x38) at 0x15a71d0, 385 entries
+(count 0x181), holding the ffmpeg codec names. A codec absent from it
+cannot be transcoded ("Cannot convert this item. Implementation for
+video decoder 'vvc' not found.").
 
-The patch is entirely in-place (no byte ever moves):
-  1. writes a "vvc" string and a "libvvc_decoder.so" string into free
-     rodata space,
-  2. repoints the registry entry for "h264_nvenc" (NVIDIA h264 encoder
-     module, dead weight on GPU-less servers) at those strings by
-     replacing the two existing RELATIVE relocation addends. The lookup
-     for "vvc" now matches and yields libvvc_decoder.so; everything else
-     is byte-identical to the pristine binary.
+The bundled "Plex Transcoder" already contains a native VVC decoder
+(V....D vvc), so the patch only needs to register the name. Plex's
+build accidentally duplicates "eightsvx_exp" (entries 342/343); the
+second copy is dead weight, so:
+
+  1. write a "vvc" string into free rodata space,
+  2. repoint the second "eightsvx_exp" entry's module slot (a plain
+     RELATIVE relocation) at that string.
+
+No bytes move, no segments change, nothing else is touched.
 
 Usage:
   patch-plex-server.py BINARY              # writes BINARY.patched
@@ -26,9 +28,10 @@ import subprocess
 import sys
 
 NAME = b"vvc\x00"
-MOD_NAME = b"libvvc_decoder.so\x00"
 R_RELATIVE = 8
-SACRIFICE = b"h264_nvenc"
+SACRIFICE = b"eightsvx_exp"
+DEC_LIST_BASE = 0x15a71d0
+DEC_LIST_COUNT = 385
 
 
 def segments(data):
@@ -57,13 +60,14 @@ def off_to_va(segs, off):
 
 
 def va_to_str(data, segs, va, limit=64):
+    if not va:
+        return None
     for so, vaddr, filesz, _ in segs:
         if vaddr <= va < vaddr + filesz:
             fo = so + (va - vaddr)
             end = data.find(b"\0", fo)
-            if end < 0 or end - fo > limit:
-                return None
-            return bytes(data[fo:end])
+            if 0 < end - fo <= limit:
+                return bytes(data[fo:end])
     return None
 
 
@@ -93,6 +97,24 @@ def verify_clean(pristine, data, allowed):
         sys.exit(f"unexpected diffs vs pristine: {unexpected[:10]}")
 
 
+def find_relocs(data, segs, target_str):
+    rela = section(data, ".rela.dyn")
+    dyn = section(data, ".dynamic")
+    relasz = 0
+    for off in range(dyn[0], dyn[0] + dyn[1], 16):
+        if struct.unpack_from("<q", data, off)[0] == 8:
+            relasz = struct.unpack_from("<Q", data, off + 8)[0]
+    hits = []
+    for i in range(relasz // 24):
+        off = rela[0] + i * 24
+        r_off, r_info, add = struct.unpack_from("<QQQ", data, off)
+        if r_info & 0xffffffff != R_RELATIVE:
+            continue
+        if va_to_str(data, segs, add) == target_str:
+            hits.append((off, r_off))
+    return hits
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -105,7 +127,7 @@ def main():
     segs = segments(data)
     allowed = set()
 
-    # 1. strings into free rodata
+    # 1. "vvc" string into free rodata
     ro = [s for s in segs if s[0] == 0][0]
     str_off = None
     zeros = 0
@@ -119,47 +141,30 @@ def main():
             zeros = 0
     if str_off is None:
         sys.exit("no free rodata space")
-    mod_off = str_off + len(NAME)
     data[str_off:str_off + len(NAME)] = NAME
-    data[mod_off:mod_off + len(MOD_NAME)] = MOD_NAME
     str_va = off_to_va(segs, str_off)
-    mod_va = off_to_va(segs, mod_off)
-    allowed.add((str_off, len(NAME) + len(MOD_NAME)))
+    allowed.add((str_off, len(NAME)))
     verify_clean(pristine, data, allowed)
-    print(f"'vvc' string at VA 0x{str_va:x}, module at VA 0x{mod_va:x}: OK")
+    print(f"'vvc' string at VA 0x{str_va:x}: OK")
 
-    # 2. find the sacrificed entry ("h264_nvenc") by its string addends
-    rela = section(data, ".rela.dyn")
-    dyn = section(data, ".dynamic")
-    relasz = 0
-    for off in range(dyn[0], dyn[0] + dyn[1], 16):
-        if struct.unpack_from("<q", data, off)[0] == 8:
-            relasz = struct.unpack_from("<Q", data, off + 8)[0]
-    n_entries = relasz // 24
-    hits = []
-    for i in range(n_entries):
-        off = rela[0] + i * 24
-        r_off, r_info, add = struct.unpack_from("<QQQ", data, off)
-        if r_info & 0xffffffff != R_RELATIVE:
-            continue
-        s = va_to_str(data, segs, add)
-        if s == SACRIFICE:
-            hits.append((off, r_off))
-    if len(hits) != 2:
-        sys.exit(f"expected 2 h264_nvenc relocations, found {len(hits)}")
-    name_off, name_slot = hits[0]
-    mod_off_r, mod_slot = hits[1]
-    if name_slot > mod_slot:
-        name_off, name_slot, mod_off_r, mod_slot = mod_off_r, mod_slot, name_off, name_slot
-    print(f"h264_nvenc entry at slots {hex(name_slot)}/{hex(mod_slot)}: OK")
-
-    # 3. repoint name -> "vvc", module -> "libvvc_decoder.so"
-    struct.pack_into("<Q", data, name_off + 16, str_va)
-    struct.pack_into("<Q", data, mod_off_r + 16, mod_va)
-    allowed.add((name_off + 16, 8))
-    allowed.add((mod_off_r + 16, 8))
+    # 2. find the duplicated eightsvx_exp entries and repoint the second
+    hits = [h for h in find_relocs(data, segs, SACRIFICE)
+            if DEC_LIST_BASE + 0x18 <= h[1] < DEC_LIST_BASE + DEC_LIST_COUNT * 0x38]
+    if len(hits) != 4:
+        sys.exit(f"expected 4 eightsvx_exp list relocations, found {len(hits)}")
+    # group by entry index; repoint every relocated field of the 2nd entry
+    entries = {}
+    for off, slot in hits:
+        idx = (slot - DEC_LIST_BASE) // 0x38
+        entries.setdefault(idx, []).append((off, slot))
+    if len(entries) != 2:
+        sys.exit("eightsvx_exp not duplicated as expected")
+    victim = max(entries)
+    for off, slot in entries[victim]:
+        struct.pack_into("<Q", data, off + 16, str_va)
+        allowed.add((off + 16, 8))
     verify_clean(pristine, data, allowed)
-    print("entry repointed: OK")
+    print(f"eightsvx_exp#2 (entry {victim}) repointed to 'vvc': OK")
 
     out = path + ".patched"
     open(out, "wb").write(bytes(data))
@@ -186,11 +191,10 @@ def verify(path):
     segs = pps.segments(data)
     ok = True
     found = 0
-    want = {NAME.rstrip(b"\0"), MOD_NAME.rstrip(b"\0")}
     for slot, add in rel.items():
         s = pps.va_to_str(data, segs, add)
-        if s in want:
-            print(f"slot {hex(slot)} -> {hex(add)} {s!r}")
+        if s == b"vvc":
+            print(f"slot {slot:#x} -> {add:#x} {s!r}")
             found += 1
     if found != 2:
         ok = False
