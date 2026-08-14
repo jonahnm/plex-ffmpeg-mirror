@@ -220,6 +220,7 @@ const FFCodec ff_vvc_decoder = {
     .cb_type        = FF_CODEC_CB_TYPE_DECODE,
     .flush          = libvvdec_flush,
     .close          = libvvdec_decode_close,
+    .bsfs           = "vvc_mp4toannexb",
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
