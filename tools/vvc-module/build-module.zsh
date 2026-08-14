@@ -75,6 +75,10 @@ if [[ ! -d "$VVDEC_SRC" ]]; then
 fi
 if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     echo "== building libvvdec (musl, static) =="
+    # vvdec's own CMakeLists appends -flto to the release flags, which
+    # the musl.cc driver cannot handle (no linker plugin); strip it.
+    grep -rl -- "-flto" "$VVDEC_SRC" --include=CMakeLists.txt 2> /dev/null \
+        | xargs -r sed -i 's/-flto//g'
     # vvdec writes its static archive into the source tree's lib/
     # directory, which its CMake never creates.
     mkdir -p "${VVDEC_SRC}/lib/release-static"
