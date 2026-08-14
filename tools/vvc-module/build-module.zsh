@@ -18,7 +18,7 @@ typeset -gr OUT="${REPO_PATH}/run/libvvc_decoder.so"
 typeset -gr VVDEC_SRC="${REPO_PATH}/run/vvdec-src"
 typeset -gr VVDEC_BUILD="${REPO_PATH}/run/vvdec-build"
 typeset -gr VVDEC_PREFIX="${REPO_PATH}/run/vvdec-prefix"
-typeset -gr VVDEC_TAG="v1.7.0"
+typeset -gr VVDEC_TAG="v2.1.0"
 
 die() {
     echo "FATAL: $1" >&2
@@ -36,6 +36,10 @@ command -v cmake > /dev/null 2>&1 \
 mkdir -p "${REPO_PATH}/run"
 
 # 1. Build libvvdec (Fraunhofer VVC reference decoder) with musl.
+if [[ -d "$VVDEC_SRC" && -z "$(ls -A "$VVDEC_SRC" 2> /dev/null)" ]]; then
+    echo "== removing empty vvdec checkout =="
+    rmdir "$VVDEC_SRC"
+fi
 if [[ ! -d "$VVDEC_SRC" ]]; then
     echo "== cloning libvvdec ${VVDEC_TAG} =="
     git clone --depth 1 --branch "$VVDEC_TAG" \
