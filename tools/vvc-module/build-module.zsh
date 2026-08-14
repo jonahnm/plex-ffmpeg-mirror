@@ -130,21 +130,30 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
 fi
 echo "libvvdec: ${VVDEC_PREFIX}/lib/libvvdec.a"
 
-# 3. Build the module: wrapper + module glue + libvvdec, with the C++
-#    runtime linked statically so the .so loads in the musl transcoder.
+# 3. Build the module: compile the C sources with the C compiler, link
+#    with the C++ driver (for the vvdec C++ objects) and the C++ runtime
+#    linked statically so the .so loads in the musl transcoder.
 echo "== building libvvc_decoder.so =="
-"$MUSL_CXX" -shared -fPIC -O2 -o "$OUT" \
-    -x c \
+OBJ_DIR="${REPO_PATH}/run/module-obj"
+mkdir -p "$OBJ_DIR"
+"$MUSL_CC" -c -O2 -fPIC -o "${OBJ_DIR}/module.o" \
+    -I"${SRC_DIR}" \
+    "${SCRIPT_PATH}/module.c" \
+    || die "module.c compile failed"
+"$MUSL_CC" -c -O2 -fPIC -o "${OBJ_DIR}/libvvdec_codec.o" \
     -I"${SRC_DIR}" \
     -I"${VVDEC_PREFIX}/include" \
     -I"${VVDEC_PREFIX}/include/vvdec" \
+    "${SCRIPT_PATH}/libvvdec_codec.c" \
+    || die "libvvdec_codec.c compile failed"
+"$MUSL_CXX" -shared -o "$OUT" \
+    "${OBJ_DIR}/module.o" \
+    "${OBJ_DIR}/libvvdec_codec.o" \
+    "${VVDEC_PREFIX}/lib/libvvdec.a" \
     -static-libstdc++ -static-libgcc \
     -Wl,--version-script="${SCRIPT_PATH}/version.script" \
-    "${SCRIPT_PATH}/module.c" \
-    "${SCRIPT_PATH}/libvvdec_codec.c" \
-    "${VVDEC_PREFIX}/lib/libvvdec.a" \
     -lm -lpthread \
-    || die "module build failed"
+    || die "module link failed"
 
 nm -D "$OUT" | grep -q "T av_init_library" \
     || die "av_init_library not exported"
