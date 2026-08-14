@@ -1,0 +1,4 @@
+vvc_decoder_1 {
+    global: av_init_library;
+    local: *;
+};

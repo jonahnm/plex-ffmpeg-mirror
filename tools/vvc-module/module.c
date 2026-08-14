@@ -29,8 +29,6 @@ extern const FFCodec ff_vvc_decoder;
 #define PLEX_FFMPEG_VERSION "4987be2-8e3461d4c82193c06183af3f"
 #define PLEX_INTERFACE_MAGIC 0x3c1f66
 
-__asm__(".symver av_init_library,av_init_library@@vvc_decoder_1");
-
 struct plex_library_info {
     void       *p10;      /* saved by the module */
     const char *(*version_cb)(void);

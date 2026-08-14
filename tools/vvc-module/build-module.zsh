@@ -32,10 +32,11 @@ mkdir -p "${REPO_PATH}/run"
 echo "== building libvvc_decoder.so =="
 x86_64-linux-musl-gcc -shared -fPIC -O2 -o "$OUT" \
     -I"${SRC_DIR}" \
+    -Wl,--version-script="${SCRIPT_PATH}/version.script" \
     "${SCRIPT_PATH}/module.c" \
     "${SRC_DIR}/libavcodec/libavcodec.a" \
     "${SRC_DIR}/libavutil/libavutil.a" \
-    -lm -lz -lpthread \
+    -lm -lpthread \
     || die "module build failed"
 
 nm -D "$OUT" | grep -q "T av_init_library" \
