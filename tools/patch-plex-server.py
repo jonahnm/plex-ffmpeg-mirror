@@ -7,15 +7,15 @@ loops over a hardcoded count. Codecs absent from it cannot be transcoded
 ("Cannot convert this item. Implementation for video decoder ... not
 found.").
 
-The patch:
+The patch is entirely in-place (no byte ever moves):
   1. bumps the lookup count (0x31 -> 0x32),
-  2. writes a "vvc" string into free .rodata space,
-  3. points the new table entry (name + module) at it,
-  4. relocates the whole .rela.dyn into the last load segment's file
-     space (extending p_filesz so it stays mapped), appending the new
-     relocation, and moves the section-header table and .shstrtab to the
-     new file end. No in-segment insertion, so all virtual addresses and
-     the segment mappings stay intact.
+  2. writes a "vvc" string and a "libvvc_decoder.so" string into free
+     rodata space,
+  3. points the new table entry's module slot at the module string by
+     replacing an existing relocation's addend,
+  4. appends one RELATIVE relocation (name slot -> "vvc") into the slack
+     that Plex's build leaves at the end of .rela.dyn, bumping
+     DT_RELASZ and RELACOUNT by one.
 
 Usage:
   patch-plex-server.py BINARY              # writes BINARY.patched
@@ -28,6 +28,7 @@ import sys
 
 STRIDE = 0x38
 NAME = b"vvc\x00"
+MOD_NAME = b"libvvc_decoder.so\x00"
 R_RELATIVE = 8
 
 
@@ -69,11 +70,6 @@ def section(data, name):
             return (struct.unpack_from("<Q", data, off + 0x18)[0],
                     struct.unpack_from("<Q", data, off + 0x20)[0])
     return None
-
-
-def read_entries(data, off, size):
-    return [struct.unpack_from("<QQQ", data, off + i * 24)
-            for i in range(size // 24)]
 
 
 def locate(data):
@@ -119,6 +115,9 @@ def main():
         sys.exit(__doc__)
     if args[0] == "--verify":
         return verify(args[1])
+    no_reloc = "--no-reloc" in args
+    no_table = "--no-table" in args
+    args = [a for a in args if not a.startswith("--")]
     path = args[0]
     pristine = bytearray(open(path, "rb").read())
     data = bytearray(pristine)
@@ -128,10 +127,13 @@ def main():
     base, count_off = locate(data)
     print(f"lookup function found; table base 0x{base:x}, count byte 0x{count_off:x}")
 
-    data[count_off] = 0x32
-    allowed.add((count_off, 1))
-    verify_clean(pristine, data, allowed)
-    print("count bump: OK")
+    if no_table:
+        print("SKIP count bump / strings / addend (--no-table)")
+    else:
+        data[count_off] = 0x32
+        allowed.add((count_off, 1))
+        verify_clean(pristine, data, allowed)
+        print("count bump: OK")
 
     ro = [s for s in segs if s[0] == 0][0]
     str_off = None
@@ -146,109 +148,116 @@ def main():
             zeros = 0
     if str_off is None:
         sys.exit("no free rodata space")
-    mod_name = b"libvvc_decoder.so\x00"
-    data[str_off:str_off + len(NAME)] = NAME
     mod_off = str_off + len(NAME)
-    data[mod_off:mod_off + len(mod_name)] = mod_name
+    data[str_off:str_off + len(NAME)] = NAME
+    data[mod_off:mod_off + len(MOD_NAME)] = MOD_NAME
     str_va = off_to_va(segs, str_off)
     mod_va = off_to_va(segs, mod_off)
-    allowed.add((str_off, len(NAME) + len(mod_name)))
+    allowed.add((str_off, len(NAME) + len(MOD_NAME)))
     verify_clean(pristine, data, allowed)
     print(f"'vvc' string at VA 0x{str_va:x}, module at VA 0x{mod_va:x}: OK")
 
     name_slot = base + 49 * STRIDE + 0x10
     mod_slot = name_slot + 8
+
     rela = section(data, ".rela.dyn")
-    entries = read_entries(data, rela[0], rela[1])
-    replaced = False
-    for i, (r_off, r_info, addend) in enumerate(entries):
-        if r_off == mod_slot:
-            entries[i] = (r_off, r_info, mod_va)
-            replaced = True
-            break
-    if not replaced:
-        sys.exit("module slot relocation not found")
-    print("module slot addend replaced: OK")
-
-    entries.append((name_slot, R_RELATIVE, str_va))
-    new_rela_size = len(entries) * 24
-
-    # 4. relocate .rela.dyn into the last load segment's file space
-    last = max(segs, key=lambda s: s[0] + s[2])
-    new_off = (last[0] + last[2] + 7) & ~7
-    new_va = last[1] + (new_off - last[0])
-
-    # move the section header table and .shstrtab out of harm's way first
-    e_shoff = struct.unpack_from("<Q", data, 0x28)[0]
-    e_shentsize = struct.unpack_from("<H", data, 0x3a)[0]
-    e_shnum = struct.unpack_from("<H", data, 0x3c)[0]
-    shdr_size = e_shnum * e_shentsize
-    old_shstr = section(data, ".shstrtab")
-    shstr_data = bytes(data[old_shstr[0]:old_shstr[0] + old_shstr[1]])
-
-    new_shoff = new_off + new_rela_size
-    new_shoff = (new_shoff + 7) & ~7
-    new_shstr_off = new_shoff + shdr_size
-
-    if len(data) < new_shstr_off + len(shstr_data):
-        data.extend(b"\0" * (new_shstr_off + len(shstr_data) - len(data)))
-
-    # copy the shdr table and shstrtab to their new locations
-    data[new_shoff:new_shoff + shdr_size] = data[e_shoff:e_shoff + shdr_size]
-    data[new_shstr_off:new_shstr_off + len(shstr_data)] = shstr_data
-    struct.pack_into("<Q", data, 0x28, new_shoff)
-    # repoint the .shstrtab section header at its new location
-    for i in range(e_shnum):
-        off = new_shoff + i * e_shentsize
-        if struct.unpack_from("<Q", data, off + 0x18)[0] == old_shstr[0]:
-            struct.pack_into("<Q", data, off + 0x18, new_shstr_off)
-
-    # write the relocation entries (overwrites the old shdr/shstrtab bytes)
-    for i, (r_off, r_info, addend) in enumerate(entries):
-        struct.pack_into("<QQQ", data, new_off + i * 24, r_off, r_info, addend)
-
-    # update the last segment's filesz (and memsz if needed)
-    e_phoff = struct.unpack_from("<Q", data, 0x20)[0]
-    e_phentsize = struct.unpack_from("<H", data, 0x36)[0]
-    e_phnum = struct.unpack_from("<H", data, 0x38)[0]
-    for i in range(e_phnum):
-        off = e_phoff + i * e_phentsize
-        if struct.unpack_from("<I", data, off)[0] != 1:
-            continue
-        p_offset, p_vaddr = struct.unpack_from("<QQ", data, off + 8)
-        p_filesz = struct.unpack_from("<Q", data, off + 32)[0]
-        p_memsz = struct.unpack_from("<Q", data, off + 40)[0]
-        if p_offset == last[0]:
-            new_filesz = new_off + new_rela_size - p_offset
-            struct.pack_into("<Q", data, off + 32, new_filesz)
-            if p_memsz < new_filesz:
-                struct.pack_into("<Q", data, off + 40, new_filesz)
-
-    # update DT_RELA / DT_RELASZ / RELACOUNT
     dyn = section(data, ".dynamic")
-    for off in range(dyn[0], dyn[0] + dyn[1], 16):
-        tag = struct.unpack_from("<q", data, off)[0]
-        if tag == 7:
-            struct.pack_into("<Q", data, off + 8, new_va)
-        elif tag == 8:
-            struct.pack_into("<Q", data, off + 8, new_rela_size)
-        elif tag == 0x6ffffff9:
-            struct.pack_into("<Q", data, off + 8,
-                             sum(1 for _, info, _ in entries if info == R_RELATIVE))
+    def dyn_val(tag):
+        for off in range(dyn[0], dyn[0] + dyn[1], 16):
+            if struct.unpack_from("<q", data, off)[0] == tag:
+                return struct.unpack_from("<Q", data, off + 8)[0]
+        return None
 
-    # update e_shoff and the .rela.dyn / .shstrtab section headers
-    for i in range(e_shnum):
-        off = new_shoff + i * e_shentsize
-        name_off = struct.unpack_from("<I", data, off)[0]
-        nm = data[new_shstr_off + name_off:].split(b"\0", 1)[0]
-        if nm == b".rela.dyn":
-            struct.pack_into("<Q", data, off + 0x10, new_va)
-            struct.pack_into("<Q", data, off + 0x18, new_off)
-            struct.pack_into("<Q", data, off + 0x20, new_rela_size)
-            struct.pack_into("<Q", data, off + 0x28, 0)
-        elif nm == b".shstrtab":
-            struct.pack_into("<Q", data, off + 0x18, new_shstr_off)
-    print("relocations relocated: OK")
+    if no_table:
+        print("SKIP module slot addend (--no-table)")
+    else:
+        n_entries = dyn_val(8) // 24
+        replaced = False
+        for i in range(n_entries):
+            off = rela[0] + i * 24
+            r_off = struct.unpack_from("<Q", data, off)[0]
+            if r_off == mod_slot:
+                struct.pack_into("<Q", data, off + 16, mod_va)
+                replaced = True
+                break
+        if not replaced:
+            sys.exit("module slot relocation not found")
+        print("module slot addend replaced: OK")
+
+    if no_reloc:
+        print("SKIP relocation append (--no-reloc)")
+    else:
+        n_entries = dyn_val(8) // 24
+        entries = []
+        for i in range(n_entries):
+            entries.append(struct.unpack_from("<QQQ", data, rela[0] + i * 24))
+        entries.append((name_slot, R_RELATIVE, str_va))
+        new_rela_size = len(entries) * 24
+
+        last = max(segs, key=lambda s: s[0] + s[2])
+        new_off = (last[0] + last[2] + 7) & ~7
+        new_va = last[1] + (new_off - last[0])
+
+        e_shoff = struct.unpack_from("<Q", data, 0x28)[0]
+        e_shentsize = struct.unpack_from("<H", data, 0x3a)[0]
+        e_shnum = struct.unpack_from("<H", data, 0x3c)[0]
+        shdr_size = e_shnum * e_shentsize
+        old_shstr = section(data, ".shstrtab")
+        shstr_data = bytes(data[old_shstr[0]:old_shstr[0] + old_shstr[1]])
+
+        new_shoff = new_off + new_rela_size
+        new_shoff = (new_shoff + 7) & ~7
+        new_shstr_off = new_shoff + shdr_size
+
+        if len(data) < new_shstr_off + len(shstr_data):
+            data.extend(b"\0" * (new_shstr_off + len(shstr_data) - len(data)))
+
+        data[new_shoff:new_shoff + shdr_size] = data[e_shoff:e_shoff + shdr_size]
+        data[new_shstr_off:new_shstr_off + len(shstr_data)] = shstr_data
+        struct.pack_into("<Q", data, 0x28, new_shoff)
+        for i in range(e_shnum):
+            off = new_shoff + i * e_shentsize
+            if struct.unpack_from("<Q", data, off + 0x18)[0] == old_shstr[0]:
+                struct.pack_into("<Q", data, off + 0x18, new_shstr_off)
+
+        for i, (r_off, r_info, addend) in enumerate(entries):
+            struct.pack_into("<QQQ", data, new_off + i * 24, r_off, r_info, addend)
+
+        e_phoff = struct.unpack_from("<Q", data, 0x20)[0]
+        e_phentsize = struct.unpack_from("<H", data, 0x36)[0]
+        e_phnum = struct.unpack_from("<H", data, 0x38)[0]
+        for i in range(e_phnum):
+            off = e_phoff + i * e_phentsize
+            if struct.unpack_from("<I", data, off)[0] != 1:
+                continue
+            p_offset = struct.unpack_from("<Q", data, off + 8)[0]
+            if p_offset == last[0]:
+                new_filesz = new_off + new_rela_size - p_offset
+                struct.pack_into("<Q", data, off + 32, new_filesz)
+                if struct.unpack_from("<Q", data, off + 40)[0] < new_filesz:
+                    struct.pack_into("<Q", data, off + 40, new_filesz)
+
+        dyn = section(data, ".dynamic")
+        for off in range(dyn[0], dyn[0] + dyn[1], 16):
+            tag = struct.unpack_from("<q", data, off)[0]
+            if tag == 7:
+                struct.pack_into("<Q", data, off + 8, new_va)
+            elif tag == 8:
+                struct.pack_into("<Q", data, off + 8, new_rela_size)
+            elif tag == 0x6ffffff9:
+                struct.pack_into("<Q", data, off + 8,
+                                 sum(1 for _, info, _ in entries if info == R_RELATIVE))
+
+        for i in range(e_shnum):
+            off = new_shoff + i * e_shentsize
+            name_off = struct.unpack_from("<I", data, off)[0]
+            nm = data[new_shstr_off + name_off:].split(b"\0", 1)[0]
+            if nm == b".rela.dyn":
+                struct.pack_into("<Q", data, off + 0x10, new_va)
+                struct.pack_into("<Q", data, off + 0x18, new_off)
+                struct.pack_into("<Q", data, off + 0x20, new_rela_size)
+                struct.pack_into("<Q", data, off + 0x28, 0)
+        print("relocations relocated: OK")
 
     out = path + ".patched"
     open(out, "wb").write(bytes(data))
@@ -269,7 +278,7 @@ def verify(path):
             idx = f.index("R_X86_64_RELATIVE")
             rel[int(f[0], 16)] = int(f[idx + 1], 16)
     ok = True
-    want = {0x15ae0d8: NAME, 0x15ae0e0: b"libvvc_decoder.so\x00"}
+    want = {0x15ae0d8: NAME, 0x15ae0e0: MOD_NAME}
     for slot, expect in want.items():
         va = rel.get(slot, 0)
         got = data[va:va + len(expect)] if va else b"MISSING"
