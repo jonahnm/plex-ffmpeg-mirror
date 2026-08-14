@@ -111,6 +111,9 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
             goto done;
         num_bytes_constraint_info = e[pos] & 0x3f;
         pos += 1;                       /* temp3 */
+        av_log(avctx, AV_LOG_ERROR,
+               "vvcC: nsub %d ncbi %d pos %d\n",
+               num_sublayers, num_bytes_constraint_info, pos);
         if (pos + 2 + num_bytes_constraint_info - 1 > esize)
             goto done;
         pos += 1;                       /* temp4: profile/tier */
@@ -126,6 +129,9 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
         if (pos >= esize)
             goto done;
         ptl_num_sub_profiles = e[pos++];
+        av_log(avctx, AV_LOG_ERROR,
+               "vvcC: subprof %d pos %d (limit %d)\n",
+               ptl_num_sub_profiles, pos, esize);
         if (pos + 4 * ptl_num_sub_profiles + 6 > esize)
             goto done;
         pos += 4 * ptl_num_sub_profiles; /* general_sub_profile_idc */
