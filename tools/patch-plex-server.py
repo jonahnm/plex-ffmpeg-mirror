@@ -120,6 +120,7 @@ def main():
     no_append = "--no-append" in args
     no_relacount = "--no-relacount" in args
     no_shdrmove = "--no-shdrmove" in args
+    no_move = "--no-move" in args
     args = [a for a in args if not a.startswith("--")]
     path = args[0]
     pristine = bytearray(open(path, "rb").read())
@@ -189,6 +190,27 @@ def main():
 
     if no_reloc:
         print("SKIP relocation append (--no-reloc)")
+    elif no_move:
+        print("SKIP block move (--no-move): extension only")
+        last = max(segs, key=lambda s: s[0] + s[2])
+        new_rela_size = 0x1aab88
+        new_off = (last[0] + last[2] + 7) & ~7
+        need = new_off + new_rela_size
+        if len(data) < need:
+            data.extend(b"\0" * (need - len(data)))
+        e_phoff = struct.unpack_from("<Q", data, 0x20)[0]
+        e_phentsize = struct.unpack_from("<H", data, 0x36)[0]
+        e_phnum = struct.unpack_from("<H", data, 0x38)[0]
+        for i in range(e_phnum):
+            off = e_phoff + i * e_phentsize
+            if struct.unpack_from("<I", data, off)[0] != 1:
+                continue
+            p_offset = struct.unpack_from("<Q", data, off + 8)[0]
+            if p_offset == last[0]:
+                new_filesz = need - p_offset
+                struct.pack_into("<Q", data, off + 32, new_filesz)
+                if struct.unpack_from("<Q", data, off + 40)[0] < new_filesz:
+                    struct.pack_into("<Q", data, off + 40, new_filesz)
     else:
         n_entries = dyn_val(8) // 24
         entries = []
