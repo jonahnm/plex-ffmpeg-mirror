@@ -170,11 +170,31 @@ done:
     if (out && out_size > 0) {
         vvdecAccessUnit au;
         vvdecFrame *f = NULL;
+        int dr;
         memset(&au, 0, sizeof(au));
         au.payload         = out;
         au.payloadUsedSize = out_size;
-        if (vvdec_decode(s->dec_ctx, &au, &f) == VVDEC_OK && f)
+        dr = vvdec_decode(s->dec_ctx, &au, &f);
+        av_log(avctx, AV_LOG_ERROR,
+               "extradata feed: %d bytes, head %02x %02x %02x %02x %02x %02x, "
+               "types ", out_size, out[0], out[1], out[2], out[3],
+               out[4], out[5]);
+        for (j = 0; j + 5 < out_size; ) {
+            int t;
+            while (j + 4 < out_size &&
+                   !(out[j] == 0 && out[j + 1] == 0 && out[j + 2] == 0 && out[j + 3] == 1))
+                j++;
+            if (j + 5 >= out_size)
+                break;
+            t = (out[j + 4] & 0x03) << 3 | (out[j + 5] >> 5);
+            av_log(avctx, AV_LOG_ERROR, "%d ", t);
+            j += 6;
+        }
+        av_log(avctx, AV_LOG_ERROR, "(vvdec ret=%d)\n", dr);
+        if (dr == VVDEC_OK && f)
             vvdec_frame_unref(s->dec_ctx, f);
+    } else {
+        av_log(avctx, AV_LOG_ERROR, "extradata conversion produced nothing\n");
     }
     av_free(out);
 }
