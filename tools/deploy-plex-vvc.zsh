@@ -137,6 +137,13 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     echo "== building libvvdec (musl, static) =="
     grep -rl -- "-flto" "$VVDEC_SRC" --include=CMakeLists.txt 2> /dev/null \
         | xargs -r sed -i 's/-flto//g'
+    # vvdec's root CMakeLists sets CMAKE_INTERPROCEDURAL_OPTIMIZATION_*
+    # ON as normal variables, which defeats -D cache overrides and adds
+    # -flto; patch the file itself so the archive is plain objects.
+    sed -i \
+        -e 's/set( CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE        ON )/set( CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE        OFF )/' \
+        -e 's/set( CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON )/set( CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF )/' \
+        "${VVDEC_SRC}/CMakeLists.txt"
     mkdir -p "${VVDEC_SRC}/lib/release-static"
     rm -rf "$VVDEC_BUILD"
     cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
