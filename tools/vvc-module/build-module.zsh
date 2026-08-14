@@ -121,7 +121,9 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
         -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_INSTALL_PREFIX="$VVDEC_PREFIX" \
         || die "vvdec cmake configure failed"
-    cmake --build "$VVDEC_BUILD" -j"$(nproc 2> /dev/null || echo 2)" \
+    # Only the static library is needed; the vvdecapp demo binary fails
+    # to link with the musl.cc toolchain (broken multilib -L path).
+    cmake --build "$VVDEC_BUILD" --target vvdec -j"$(nproc 2> /dev/null || echo 2)" \
         || die "vvdec build failed"
     cmake --install "$VVDEC_BUILD" \
         || die "vvdec install failed"
