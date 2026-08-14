@@ -24,13 +24,64 @@
 
 typedef struct VVDecContext {
     vvdecDecoder *dec_ctx;
+    uint8_t *buf;
+    int      buf_size;
+    int      buf_cap;
 } VVDecContext;
+
+/* VVC NAL unit type (2-byte header after the start code). */
+static int vvc_nal_type(const uint8_t *pkt, int size)
+{
+    if (size >= 6 && pkt[0] == 0 && pkt[1] == 0 && pkt[2] == 0 && pkt[3] == 1)
+        return (pkt[4] & 0x07) << 3 | (pkt[5] >> 5);
+    if (size >= 5 && pkt[0] == 0 && pkt[1] == 0 && pkt[2] == 1)
+        return (pkt[3] & 0x07) << 3 | (pkt[4] >> 5);
+    return -1;
+}
+
+/* Non-VCL NALs (OPI, APS, SEI, VPS, SPS, PPS, AUD, ...) must be fed to
+ * the decoder together with the following VCL access unit; on their own
+ * vvdec rejects them (VVDEC_ERR_DEC_INPUT). */
+static int vvc_nal_is_vcl(int type)
+{
+    switch (type) {
+    case 6:   /* OPI */
+    case 12:  /* OPI (alternate id) */
+    case 15:  /* PREFIX_APS */
+    case 16:  /* SUFFIX_APS */
+    case 17:  /* PREFIX_SEI */
+    case 18:  /* SUFFIX_SEI */
+    case 19:  /* VPS */
+    case 20:  /* SPS */
+    case 21:  /* PPS */
+    case 22:  /* PREFIX_OPI */
+    case 23:  /* SUFFIX_OPI */
+        return 0;
+    }
+    return type >= 0 && type <= 23;
+}
+
+static int vvc_buf_append(VVDecContext *s, const uint8_t *data, int size)
+{
+    if (s->buf_size + size > s->buf_cap) {
+        int ncap = (s->buf_size + size + 65535) & ~65535;
+        uint8_t *nbuf = av_realloc(s->buf, ncap);
+        if (!nbuf)
+            return AVERROR(ENOMEM);
+        s->buf = nbuf;
+        s->buf_cap = ncap;
+    }
+    memcpy(s->buf + s->buf_size, data, size);
+    s->buf_size += size;
+    return 0;
+}
 
 static void libvvdec_flush(AVCodecContext *avctx)
 {
     VVDecContext *s = avctx->priv_data;
     vvdecFrame *dec_frame = NULL;
 
+    s->buf_size = 0;
     while (vvdec_flush(s->dec_ctx, &dec_frame) == VVDEC_OK && dec_frame) {
         vvdec_frame_unref(s->dec_ctx, dec_frame);
         dec_frame = NULL;
@@ -45,6 +96,8 @@ static av_cold int libvvdec_decode_close(AVCodecContext *avctx)
         vvdec_decoder_close(s->dec_ctx);
         s->dec_ctx = NULL;
     }
+    av_freep(&s->buf);
+    s->buf_size = s->buf_cap = 0;
 
     return 0;
 }
@@ -178,9 +231,18 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     memset(&au, 0, sizeof(au));
     if (pkt->size) {
-        au.payload        = pkt->data;
-        au.payloadUsedSize = pkt->size;
-        ret = vvdec_decode(s->dec_ctx, &au, &dec_frame);
+        int type = vvc_nal_type(pkt->data, pkt->size);
+        int ret2 = vvc_buf_append(s, pkt->data, pkt->size);
+        if (ret2 < 0)
+            return ret2;
+        if (vvc_nal_is_vcl(type)) {
+            au.payload         = s->buf;
+            au.payloadUsedSize = s->buf_size;
+            ret = vvdec_decode(s->dec_ctx, &au, &dec_frame);
+            s->buf_size = 0;
+        } else {
+            return 0;
+        }
     } else {
         ret = vvdec_flush(s->dec_ctx, &dec_frame);
     }
