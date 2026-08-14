@@ -24,14 +24,11 @@ index a136e309..b64c78b3 100644
  OBJS-$(CONFIG_AC3DSP)                  += ac3dsp.o ac3.o ac3tab.o
  OBJS-$(CONFIG_ADTS_HEADER)             += adts_header.o mpeg4audio_sample_rates.o
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
-index 542cc9e4..8acffdf1 100644
+index 542cc9e4..eb54df1b 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
 +++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/allcodecs.c
-@@ -165,10 +165,10 @@ extern const FFCodec ff_h264_qsv_decoder;
- extern const FFCodec ff_h264_rkmpp_decoder;
- extern const FFCodec ff_hap_encoder;
+@@ -167,8 +167,7 @@ extern const FFCodec ff_hap_encoder;
  extern const FFCodec ff_hap_decoder;
-+extern const FFCodec ff_vvc_decoder;
  extern const FFCodec ff_hevc_decoder;
  extern const FFCodec ff_hevc_qsv_decoder;
 -extern const FFCodec ff_hevc_rkmpp_decoder;
@@ -40,6 +37,14 @@ index 542cc9e4..8acffdf1 100644
  extern const FFCodec ff_hnm4_video_decoder;
  extern const FFCodec ff_hq_hqa_decoder;
  extern const FFCodec ff_hqx_decoder;
+@@ -391,6 +390,7 @@ extern const FFCodec ff_vp8_v4l2m2m_decoder;
+ extern const FFCodec ff_vp9_decoder;
+ extern const FFCodec ff_vp9_rkmpp_decoder;
+ extern const FFCodec ff_vp9_v4l2m2m_decoder;
++extern const FFCodec ff_vvc_decoder;
+ extern const FFCodec ff_vqa_decoder;
+ extern const FFCodec ff_vqc_decoder;
+ extern const FFCodec ff_wbmp_decoder;
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c
 index 68c9aede..db803ea3 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/cbs_h2645.c
@@ -115,21 +120,6 @@ index 03d46c46..f7b21d3a 100644
                  slice_idx += pps->num_slices_in_subpic[i];
              }
              width_in_tiles =
-diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
-index f556bb94..b087cd64 100644
---- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
-+++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/codec_desc.c
-@@ -1437,8 +1437,8 @@ static const AVCodecDescriptor codec_descriptors[] = {
-     {
-         .id        = AV_CODEC_ID_VVC,
-         .type      = AVMEDIA_TYPE_VIDEO,
--        .name      = "vvc",
--        .long_name = NULL_IF_CONFIG_SMALL("H.266 / VVC (Versatile Video Coding)"),
-+        .name      = "hevc",
-+        .long_name = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
-         .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
-         .profiles  = NULL_IF_CONFIG_SMALL(ff_vvc_profiles),
-     },
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/h26x/h2656_deblock_template.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/h26x/h2656_deblock_template.c
 new file mode 100644
 index 00000000..8ed95e75
@@ -22115,7 +22105,7 @@ index 00000000..6c726744
 +#endif // AVCODEC_VVC_VVC_THREAD_H
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c
 new file mode 100644
-index 00000000..18cfd57b
+index 00000000..57d5bf65
 --- /dev/null
 +++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc/vvcdec.c
 @@ -0,0 +1,1050 @@
@@ -23155,7 +23145,7 @@ index 00000000..18cfd57b
 +}
 +
 +const FFCodec ff_vvc_decoder = {
-+    .p.name         = "hevc",
++    .p.name         = "vvc",
 +    .p.long_name    = NULL_IF_CONFIG_SMALL("VVC (Versatile Video Coding)"),
 +    .p.type         = AVMEDIA_TYPE_VIDEO,
 +    .p.id           = AV_CODEC_ID_VVC,
@@ -23841,23 +23831,6 @@ index 00000000..33815d67
 +#undef VVC_ITX
 +#undef VVC_ITX_COMMON
 +}
-diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
-index c661595e..66a0d1ef 100644
---- a/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
-+++ b/plex-ffmpeg-source/PlexTranscoder/libavcodec/vvc_parser.c
-@@ -176,7 +176,11 @@ static void set_parser_ctx(AVCodecParserContext *s, AVCodecContext *avctx,
-         h266_sub_height_c[sps->sps_chroma_format_idc];;
- 
-     avctx->profile = sps->profile_tier_level.general_profile_idc;
--    avctx->level = sps->profile_tier_level.general_level_idc;
-+    /* Plex deployment: report an extreme level so Plex's decision engine
-+     * never offers direct play for VVC streams (its DB codec is "hevc",
-+     * which clients accept at ordinary levels) and always transcodes.
-+     * The decoder parses the real level from the SPS itself. */
-+    avctx->level = 255;
- 
-     avctx->colorspace = (enum AVColorSpace) sps->vui.vui_matrix_coeffs;
-     avctx->color_primaries = (enum AVColorPrimaries) sps->vui.vui_colour_primaries;
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavcodec/x86/h26x/h2656_inter.asm b/plex-ffmpeg-source/PlexTranscoder/libavcodec/x86/h26x/h2656_inter.asm
 new file mode 100644
 index 00000000..cbba0c1e
@@ -25872,22 +25845,6 @@ index 5878594e..4c83b9a0 100644
      {"V_MPEG4/MS/V3"    , AV_CODEC_ID_MSMPEG4V3},
      {"V_PRORES"         , AV_CODEC_ID_PRORES},
      {"V_REAL/RV10"      , AV_CODEC_ID_RV10},
-diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
-index 3e123511..3d581e3f 100644
---- a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
-+++ b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskadec.c
-@@ -2886,6 +2886,11 @@ static int mkv_parse_video_codec(MatroskaTrack *track, AVCodecParameters *par,
-         if (codec_id == AV_CODEC_ID_NONE)
-             av_log(matroska->ctx, AV_LOG_ERROR,
-                    "mov FourCC not found %s.\n", av_fourcc2str(fourcc));
-+        /* Plex deployment: see libavcodec/vvc_parser.c - report an
-+         * extreme level so Plex always transcodes VVC instead of direct
-+         * playing it (the client cannot decode VVC data). */
-+        if (codec_id == AV_CODEC_ID_VVC)
-+            par->level = 255;
-         if (track->codec_priv.size >= 86) {
-             FFIOContext b;
-             unsigned bit_depth = AV_RB16(track->codec_priv.data + 82);
 diff --git a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c b/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c
 index c1f3fde2..87b55034 100644
 --- a/plex-ffmpeg-source/PlexTranscoder/libavformat/matroskaenc.c

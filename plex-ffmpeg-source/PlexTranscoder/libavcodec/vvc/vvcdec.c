@@ -1034,7 +1034,7 @@ static av_cold int vvc_decode_init(AVCodecContext *avctx)
 }
 
 const FFCodec ff_vvc_decoder = {
-    .p.name         = "hevc",
+    .p.name         = "vvc",
     .p.long_name    = NULL_IF_CONFIG_SMALL("VVC (Versatile Video Coding)"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_VVC,

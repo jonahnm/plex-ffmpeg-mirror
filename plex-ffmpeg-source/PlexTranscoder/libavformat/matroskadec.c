@@ -2886,11 +2886,6 @@ static int mkv_parse_video_codec(MatroskaTrack *track, AVCodecParameters *par,
         if (codec_id == AV_CODEC_ID_NONE)
             av_log(matroska->ctx, AV_LOG_ERROR,
                    "mov FourCC not found %s.\n", av_fourcc2str(fourcc));
-        /* Plex deployment: see libavcodec/vvc_parser.c - report an
-         * extreme level so Plex always transcodes VVC instead of direct
-         * playing it (the client cannot decode VVC data). */
-        if (codec_id == AV_CODEC_ID_VVC)
-            par->level = 255;
         if (track->codec_priv.size >= 86) {
             FFIOContext b;
             unsigned bit_depth = AV_RB16(track->codec_priv.data + 82);
