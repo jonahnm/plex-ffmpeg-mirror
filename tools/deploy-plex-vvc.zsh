@@ -84,12 +84,101 @@ fi
 echo "x264: musl build confirmed"
 export PKG_CONFIG_PATH="${X264_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
-# 2. Build the mirrored source with shared libraries and libx264, forcing a
-#    clean rebuild so the current sources (including the fcntl compatibility
-#    flags) are always compiled in.
+# 2. Build libvvdec (Fraunhofer VVC reference decoder) with musl; it
+#    replaces the bundled experimental native vvc decoder in the
+#    transcoder libraries.
+typeset -gr VVDEC_SRC="${REPO_PATH}/run/vvdec-src"
+typeset -gr VVDEC_BUILD="${REPO_PATH}/run/vvdec-build"
+typeset -gr VVDEC_PREFIX="${REPO_PATH}/run/vvdec-prefix"
+typeset -gr VVDEC_TAG="v2.1.0"
+typeset -gr MUSL_CROSS="${REPO_PATH}/run/musl-cross"
+MUSL_CXX="x86_64-linux-musl-g++"
+if ! command -v "$MUSL_CXX" > /dev/null 2>&1; then
+    if [[ ! -x "${MUSL_CROSS}/bin/x86_64-linux-musl-g++" ]]; then
+        echo "== downloading musl-cross toolchain from musl.cc =="
+        curl -L --fail -o "${REPO_PATH}/run/musl-cross.tgz" \
+            https://musl.cc/x86_64-linux-musl-cross.tgz \
+            || die "failed to download musl-cross toolchain"
+        mkdir -p "$MUSL_CROSS"
+        tar -xzf "${REPO_PATH}/run/musl-cross.tgz" -C "$MUSL_CROSS" --strip-components=1 \
+            || die "failed to extract musl-cross toolchain"
+    fi
+    MUSL_CXX="${MUSL_CROSS}/bin/x86_64-linux-musl-g++"
+fi
+MUSL_CC="${MUSL_CXX%g++}gcc"
+# The musl.cc gcc driver emits -fno-fat-lto-objects unconditionally for
+# C++ (builtin specs), which its cc1plus rejects (no LTO plugin). Wrap
+# the compiler to filter the flag.
+WRAP="${REPO_PATH}/run/musl-gxx-wrap"
+if [[ ! -x "$WRAP" ]]; then
+    cat > "$WRAP" <<EOF
+#!/bin/zsh
+args=()
+for a in "\$@"; do
+    [[ "\$a" == "-fno-fat-lto-objects" || "\$a" == "-flto" ]] && continue
+    args+=("\$a")
+done
+exec "$MUSL_CXX" "\${args[@]}"
+EOF
+    chmod +x "$WRAP"
+fi
+MUSL_CXX="$WRAP"
+
+if [[ -d "$VVDEC_SRC" && -z "$(ls -A "$VVDEC_SRC" 2> /dev/null)" ]]; then
+    rmdir "$VVDEC_SRC"
+fi
+if [[ ! -d "$VVDEC_SRC" ]]; then
+    echo "== cloning libvvdec ${VVDEC_TAG} =="
+    git clone --depth 1 --branch "$VVDEC_TAG" \
+        https://github.com/fraunhoferhhi/vvdec.git "$VVDEC_SRC" \
+        || die "failed to clone vvdec"
+fi
+if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
+    echo "== building libvvdec (musl, static) =="
+    grep -rl -- "-flto" "$VVDEC_SRC" --include=CMakeLists.txt 2> /dev/null \
+        | xargs -r sed -i 's/-flto//g'
+    mkdir -p "${VVDEC_SRC}/lib/release-static"
+    rm -rf "$VVDEC_BUILD"
+    cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
+        -DCMAKE_C_COMPILER="$MUSL_CC" \
+        -DCMAKE_CXX_COMPILER="$MUSL_CXX" \
+        -DCMAKE_AR=/usr/bin/ar \
+        -DCMAKE_C_COMPILER_AR=/usr/bin/ar \
+        -DCMAKE_CXX_COMPILER_AR=/usr/bin/ar \
+        -DCMAKE_RANLIB=/usr/bin/ranlib \
+        -DCMAKE_C_COMPILER_RANLIB=/usr/bin/ranlib \
+        -DCMAKE_CXX_COMPILER_RANLIB=/usr/bin/ranlib \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_FLAGS_RELEASE="-O3 -fno-lto" \
+        -DCMAKE_CXX_FLAGS_RELEASE="-O3 -fno-lto" \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_INSTALL_PREFIX="$VVDEC_PREFIX" \
+        || die "vvdec cmake configure failed"
+    cmake --build "$VVDEC_BUILD" --target vvdec -j"$(nproc 2> /dev/null || echo 2)" \
+        || die "vvdec build failed"
+    cmake --install "$VVDEC_BUILD" \
+        || die "vvdec install failed"
+fi
+echo "libvvdec: ${VVDEC_PREFIX}/lib/libvvdec.a"
+
+# 2b. Install the libvvdec-based vvc decoder into the mirrored source
+#     and hook it into the build.
+cp "${SCRIPT_PATH}/vvc-module/libvvdec_ffmpeg.c" "${SRC_DIR}/libavcodec/libvvdec.c"
+if ! grep -q "libvvdec.o" "${SRC_DIR}/libavcodec/Makefile"; then
+    sed -i '0,/^OBJS += /s//OBJS += libvvdec.o\n&/' "${SRC_DIR}/libavcodec/Makefile" \
+        || die "failed to patch libavcodec/Makefile"
+fi
+
+# 2c. Build the mirrored source with shared libraries and libx264,
+#     forcing a clean rebuild. The native vvc decoder is disabled; the
+#     libvvdec-based one (registered post-configure) replaces it.
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     --enable-gpl --enable-libx264 --enable-eae --cc="$MUSL_CC" \
+    --disable-decoder=vvc \
+    --extra-cflags="-I${VVDEC_PREFIX}/include/vvdec -I${VVDEC_PREFIX}/include" \
+    --extra-ldflags="-L${VVDEC_PREFIX}/lib" \
+    --extra-libs="-static-libstdc++ -lvvdec -lpthread" \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
