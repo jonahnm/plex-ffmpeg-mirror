@@ -184,6 +184,12 @@ static av_cold int libvvdec_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
+static void vvc_vvdec_log(void *ctx, int level, const char *fmt, va_list args)
+{
+    vfprintf(stderr, fmt, args);
+    fputc('\n', stderr);
+}
+
 static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
 {
     VVDecContext *s = avctx->priv_data;
@@ -201,6 +207,7 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "vvdec_decoder_open() failed\n");
         return AVERROR_EXTERNAL;
     }
+    vvdec_set_logging_callback(s->dec_ctx, vvc_vvdec_log);
 
     /* Matroska keeps the VVC parameter sets in the CodecPrivate
      * (extradata), length-prefixed; convert to annex-B and feed vvdec
