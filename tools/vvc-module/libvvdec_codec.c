@@ -58,7 +58,8 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     if (!params)
         return AVERROR(ENOMEM);
     vvdec_params_default(params);
-    params->logLevel = VVDEC_SILENT;
+    params->logLevel      = VVDEC_SILENT;
+    params->removePadding = true;
 
     s->dec_ctx = vvdec_decoder_open(params);
     vvdec_params_free(params);
