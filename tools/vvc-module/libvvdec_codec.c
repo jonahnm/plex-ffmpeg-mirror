@@ -93,6 +93,9 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
     temp = e[pos++];
     length_size = ((temp & 6) >> 1) + 1;
     ptl_present = temp & 1;
+    av_log(avctx, AV_LOG_ERROR,
+           "vvcC: temp %d length_size %d ptl %d esize %d\n",
+           temp, length_size, ptl_present, esize);
 
     if (ptl_present) {
         int temp2, num_sublayers, num_bytes_constraint_info;
@@ -132,6 +135,8 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
     if (pos >= esize)
         goto done;
     num_arrays = e[pos++];
+    av_log(avctx, AV_LOG_ERROR,
+           "vvcC: pos after PTL %d, num_arrays %d\n", pos - 1, num_arrays);
 
     for (i = 0; i < num_arrays && pos + 3 <= esize; i++) {
         int type = e[pos] & 0x1f;
@@ -143,6 +148,8 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
             cnt = (e[pos] << 8) | e[pos + 1];
             pos += 2;
         }
+        av_log(avctx, AV_LOG_ERROR, "vvcC: array %d type %d cnt %d\n",
+               i, type, cnt);
         for (j = 0; j < cnt; j++) {
             int nalu_len;
             uint8_t *nb;
