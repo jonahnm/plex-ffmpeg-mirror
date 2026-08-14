@@ -149,6 +149,7 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
         -DCMAKE_C_COMPILER_RANLIB=/usr/bin/ranlib \
         -DCMAKE_CXX_COMPILER_RANLIB=/usr/bin/ranlib \
         -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
         -DCMAKE_C_FLAGS_RELEASE="-O3 -fno-lto" \
         -DCMAKE_CXX_FLAGS_RELEASE="-O3 -fno-lto" \
         -DBUILD_SHARED_LIBS=OFF \
