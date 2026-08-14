@@ -137,20 +137,15 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
         av_log(avctx, AV_LOG_ERROR,
                "vvcC: subprof %d pos %d (limit %d)\n",
                ptl_num_sub_profiles, pos, esize);
-        if (pos >= 6 && pos <= esize - 32) {
+        if (pos >= 8 && pos <= esize - 16) {
             av_log(avctx, AV_LOG_ERROR,
-                   "vvcC: raw[%d..%d]: %02x %02x %02x %02x %02x %02x %02x %02x "
-                   "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                   "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                   pos - 37, pos - 6,
-                   e[pos - 37], e[pos - 36], e[pos - 35], e[pos - 34],
-                   e[pos - 33], e[pos - 32], e[pos - 31], e[pos - 30],
-                   e[pos - 29], e[pos - 28], e[pos - 27], e[pos - 26],
-                   e[pos - 25], e[pos - 24], e[pos - 23], e[pos - 22],
-                   e[pos - 21], e[pos - 20], e[pos - 19], e[pos - 18],
-                   e[pos - 17], e[pos - 16], e[pos - 15], e[pos - 14],
-                   e[pos - 13], e[pos - 12], e[pos - 11], e[pos - 10],
-                   e[pos - 9], e[pos - 8], e[pos - 7], e[pos - 6]);
+                   "vvcC: raw2[%d..%d]: %02x %02x %02x %02x %02x %02x %02x %02x "
+                   "%02x %02x %02x %02x %02x %02x %02x %02x\n",
+                   pos - 8, pos + 7,
+                   e[pos - 8], e[pos - 7], e[pos - 6], e[pos - 5],
+                   e[pos - 4], e[pos - 3], e[pos - 2], e[pos - 1],
+                   e[pos], e[pos + 1], e[pos + 2], e[pos + 3],
+                   e[pos + 4], e[pos + 5], e[pos + 6], e[pos + 7]);
         }
         if (pos + 4 * ptl_num_sub_profiles + 6 > esize)
             goto done;
