@@ -125,6 +125,13 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
     if (avctx->extradata && avctx->extradata_size > 0) {
         vvdecAccessUnit au;
         vvdecFrame *f = NULL;
+        int n = avctx->extradata_size;
+        const uint8_t *e = avctx->extradata;
+        av_log(avctx, AV_LOG_ERROR,
+               "extradata %d bytes: %02x %02x %02x %02x %02x %02x %02x %02x "
+               "%02x %02x %02x %02x %02x %02x %02x %02x\n",
+               n, e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7],
+               e[8], e[9], e[10], e[11], e[12], e[13], e[14], e[15]);
         memset(&au, 0, sizeof(au));
         au.payload         = avctx->extradata;
         au.payloadUsedSize = avctx->extradata_size;
