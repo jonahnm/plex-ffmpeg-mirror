@@ -62,8 +62,9 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     # vvdec writes its static archive into the source tree's lib/
     # directory, which its CMake never creates.
     mkdir -p "${VVDEC_SRC}/lib/release-static"
-    # vvdec overrides the archive rule; pin every archiver variable so
-    # the link step does not end up with *-NOTFOUND commands.
+    # vvdec overrides the archive rule; pin every archiver/ranlib
+    # variable so the link step does not end up with *-NOTFOUND
+    # commands.
     rm -rf "$VVDEC_BUILD"
     cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
         -DCMAKE_C_COMPILER=x86_64-linux-musl-gcc \
@@ -71,6 +72,9 @@ if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
         -DCMAKE_AR=/usr/bin/ar \
         -DCMAKE_C_COMPILER_AR=/usr/bin/ar \
         -DCMAKE_CXX_COMPILER_AR=/usr/bin/ar \
+        -DCMAKE_RANLIB=/usr/bin/ranlib \
+        -DCMAKE_C_COMPILER_RANLIB=/usr/bin/ranlib \
+        -DCMAKE_CXX_COMPILER_RANLIB=/usr/bin/ranlib \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_INSTALL_PREFIX="$VVDEC_PREFIX" \
