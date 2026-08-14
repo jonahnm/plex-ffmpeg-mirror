@@ -148,11 +148,11 @@ def main():
     print(f"'vvc' string at VA 0x{str_va:x}: OK")
 
     # 2. find the duplicated eightsvx_exp entries and repoint the second
+    #    entry's relocated fields (name at +0x08, module at +0x18/+0x20)
     hits = [h for h in find_relocs(data, segs, SACRIFICE)
             if DEC_LIST_BASE + 0x18 <= h[1] < DEC_LIST_BASE + DEC_LIST_COUNT * 0x38]
     if len(hits) != 4:
         sys.exit(f"expected 4 eightsvx_exp list relocations, found {len(hits)}")
-    # group by entry index; repoint every relocated field of the 2nd entry
     entries = {}
     for off, slot in hits:
         idx = (slot - DEC_LIST_BASE) // 0x38
@@ -160,11 +160,17 @@ def main():
     if len(entries) != 2:
         sys.exit("eightsvx_exp not duplicated as expected")
     victim = max(entries)
-    for off, slot in entries[victim]:
+    victim_start = DEC_LIST_BASE + victim * 0x38
+    fields = [h for h in find_relocs(data, segs, b"8svx_fib")
+              if victim_start <= h[1] < victim_start + 0x38]
+    if len(fields) != 1:
+        sys.exit(f"expected 1 8svx_fib relocation in entry {victim}, found {len(fields)}")
+    all_hits = entries[victim] + fields
+    for off, slot in all_hits:
         struct.pack_into("<Q", data, off + 16, str_va)
         allowed.add((off + 16, 8))
     verify_clean(pristine, data, allowed)
-    print(f"eightsvx_exp#2 (entry {victim}) repointed to 'vvc': OK")
+    print(f"eightsvx_exp#2 (entry {victim}) repointed to 'vvc' ({len(all_hits)} fields): OK")
 
     out = path + ".patched"
     open(out, "wb").write(bytes(data))
@@ -196,7 +202,7 @@ def verify(path):
         if s == b"vvc":
             print(f"slot {slot:#x} -> {add:#x} {s!r}")
             found += 1
-    if found != 2:
+    if found != 3:
         ok = False
     print("RELATIVE count:", len(rel))
     print("JUMP_SLOT count:", out.count("R_X86_64_JUMP_SLO"))
