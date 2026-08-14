@@ -182,13 +182,17 @@ fi
 # 2c. Build the mirrored source with shared libraries and libx264,
 #     forcing a clean rebuild. The native vvc decoder is disabled; the
 #     libvvdec-based one (registered post-configure) replaces it.
+MUSL_STDCXX="$(ls "${MUSL_CROSS}"/lib/gcc/x86_64-linux-musl/*/libstdc++.a 2> /dev/null | head -1)"
+MUSL_LIBGCC="$(ls "${MUSL_CROSS}"/lib/gcc/x86_64-linux-musl/*/libgcc.a 2> /dev/null | head -1)"
+[[ -n "$MUSL_STDCXX" && -n "$MUSL_LIBGCC" ]] \
+    || die "musl-cross libstdc++.a/libgcc.a not found in $MUSL_CROSS"
 echo "== building shared ffmpeg libraries (this takes a few minutes) =="
 zsh "${SCRIPT_PATH}/build-ffmpeg.zsh" "${SRC_DIR}" -c -- --enable-shared \
     --enable-gpl --enable-libx264 --enable-eae --cc="$MUSL_CC" \
     --disable-decoder=vvc \
     --extra-cflags="-I${VVDEC_PREFIX}/include/vvdec -I${VVDEC_PREFIX}/include" \
     --extra-ldflags="-L${VVDEC_PREFIX}/lib" \
-    --extra-libs="-static-libstdc++ -lvvdec -lpthread" \
+    --extra-libs="-lvvdec -lpthread ${MUSL_STDCXX} ${MUSL_LIBGCC}" \
     || die "build failed"
 
 # 3. Locate the freshly built libraries.
