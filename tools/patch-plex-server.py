@@ -117,6 +117,9 @@ def main():
         return verify(args[1])
     no_reloc = "--no-reloc" in args
     no_table = "--no-table" in args
+    no_append = "--no-append" in args
+    no_relacount = "--no-relacount" in args
+    no_shdrmove = "--no-shdrmove" in args
     args = [a for a in args if not a.startswith("--")]
     path = args[0]
     pristine = bytearray(open(path, "rb").read())
@@ -191,7 +194,8 @@ def main():
         entries = []
         for i in range(n_entries):
             entries.append(struct.unpack_from("<QQQ", data, rela[0] + i * 24))
-        entries.append((name_slot, R_RELATIVE, str_va))
+        if not no_append:
+            entries.append((name_slot, R_RELATIVE, str_va))
         new_rela_size = len(entries) * 24
 
         last = max(segs, key=lambda s: s[0] + s[2])
@@ -212,13 +216,16 @@ def main():
         if len(data) < new_shstr_off + len(shstr_data):
             data.extend(b"\0" * (new_shstr_off + len(shstr_data) - len(data)))
 
-        data[new_shoff:new_shoff + shdr_size] = data[e_shoff:e_shoff + shdr_size]
-        data[new_shstr_off:new_shstr_off + len(shstr_data)] = shstr_data
-        struct.pack_into("<Q", data, 0x28, new_shoff)
-        for i in range(e_shnum):
-            off = new_shoff + i * e_shentsize
-            if struct.unpack_from("<Q", data, off + 0x18)[0] == old_shstr[0]:
-                struct.pack_into("<Q", data, off + 0x18, new_shstr_off)
+        if no_shdrmove:
+            print("SKIP shdr/shstrtab move (--no-shdrmove)")
+        else:
+            data[new_shoff:new_shoff + shdr_size] = data[e_shoff:e_shoff + shdr_size]
+            data[new_shstr_off:new_shstr_off + len(shstr_data)] = shstr_data
+            struct.pack_into("<Q", data, 0x28, new_shoff)
+            for i in range(e_shnum):
+                off = new_shoff + i * e_shentsize
+                if struct.unpack_from("<Q", data, off + 0x18)[0] == old_shstr[0]:
+                    struct.pack_into("<Q", data, off + 0x18, new_shstr_off)
 
         for i, (r_off, r_info, addend) in enumerate(entries):
             struct.pack_into("<QQQ", data, new_off + i * 24, r_off, r_info, addend)
@@ -244,19 +251,20 @@ def main():
                 struct.pack_into("<Q", data, off + 8, new_va)
             elif tag == 8:
                 struct.pack_into("<Q", data, off + 8, new_rela_size)
-            elif tag == 0x6ffffff9:
+            elif tag == 0x6ffffff9 and not no_relacount:
                 struct.pack_into("<Q", data, off + 8,
                                  sum(1 for _, info, _ in entries if info == R_RELATIVE))
 
-        for i in range(e_shnum):
-            off = new_shoff + i * e_shentsize
-            name_off = struct.unpack_from("<I", data, off)[0]
-            nm = data[new_shstr_off + name_off:].split(b"\0", 1)[0]
-            if nm == b".rela.dyn":
-                struct.pack_into("<Q", data, off + 0x10, new_va)
-                struct.pack_into("<Q", data, off + 0x18, new_off)
-                struct.pack_into("<Q", data, off + 0x20, new_rela_size)
-                struct.pack_into("<Q", data, off + 0x28, 0)
+        if not no_shdrmove:
+            for i in range(e_shnum):
+                off = new_shoff + i * e_shentsize
+                name_off = struct.unpack_from("<I", data, off)[0]
+                nm = data[new_shstr_off + name_off:].split(b"\0", 1)[0]
+                if nm == b".rela.dyn":
+                    struct.pack_into("<Q", data, off + 0x10, new_va)
+                    struct.pack_into("<Q", data, off + 0x18, new_off)
+                    struct.pack_into("<Q", data, off + 0x20, new_rela_size)
+                    struct.pack_into("<Q", data, off + 0x28, 0)
         print("relocations relocated: OK")
 
     out = path + ".patched"
