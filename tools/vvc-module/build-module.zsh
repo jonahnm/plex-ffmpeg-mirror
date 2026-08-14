@@ -90,6 +90,7 @@ echo "libvvdec: ${VVDEC_PREFIX}/lib/libvvdec.a"
 echo "== building libvvc_decoder.so =="
 x86_64-linux-musl-gcc -shared -fPIC -O2 -o "$OUT" \
     -I"${SRC_DIR}" \
+    -I"${VVDEC_PREFIX}/include" \
     -I"${VVDEC_PREFIX}/include/vvdec" \
     -Wl,--version-script="${SCRIPT_PATH}/version.script" \
     "${SCRIPT_PATH}/module.c" \
