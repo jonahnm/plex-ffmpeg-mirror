@@ -150,19 +150,10 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
 
 done:
     if (out && out_size > 0) {
-        vvdecAccessUnit au;
-        vvdecFrame *f = NULL;
-        int dr;
-        memset(&au, 0, sizeof(au));
-        au.payload         = out;
-        au.payloadUsedSize = out_size;
-        dr = vvdec_decode(s->dec_ctx, &au, &f);
-        if (dr != VVDEC_OK)
-            av_log(avctx, AV_LOG_ERROR,
-                   "vvdec rejected the parameter sets (ret=%d, %d bytes)\n",
-                   dr, out_size);
-        if (dr == VVDEC_OK && f)
-            vvdec_frame_unref(s->dec_ctx, f);
+        /* Append the parameter sets to the accumulation buffer; they
+         * are decoded together with the first VCL access unit. */
+        if (vvc_buf_append(s, out, out_size) < 0)
+            av_log(avctx, AV_LOG_ERROR, "failed to buffer parameter sets\n");
     }
     av_free(out);
 }
