@@ -12,7 +12,7 @@
 #   contain a finished shared build (libavcodec.a, libavutil.a).
 
 typeset -gr SCRIPT_PATH="${0:A:h}"
-typeset -gr REPO_PATH="${SCRIPT_PATH:h}"
+typeset -gr REPO_PATH="${SCRIPT_PATH:h:h}"
 typeset -gr SRC_DIR="${1:-${REPO_PATH}/plex-ffmpeg-source/PlexTranscoder}"
 typeset -gr OUT="${REPO_PATH}/run/libvvc_decoder.so"
 
