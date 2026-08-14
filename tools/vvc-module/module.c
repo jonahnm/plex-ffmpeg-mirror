@@ -25,8 +25,10 @@
 /* From the mirrored libavcodec build. */
 extern const FFCodec ff_vvc_decoder;
 
-/* Plex's transcoder build hash; the host's version callback must match. */
-#define PLEX_FFMPEG_VERSION "4987be2-8e3461d4c82193c06183af3f"
+/* Plex's transcoder interface magic; the version gate is deliberately
+ * not enforced (the earlier reverse-engineered hash does not match
+ * current hosts, which caused init_library() to fail and the module to
+ * be unloaded). */
 #define PLEX_INTERFACE_MAGIC 0x3c1f66
 
 struct plex_library_info {
@@ -39,19 +41,17 @@ struct plex_library_info {
 int av_init_library(struct plex_library_info *info, int log_level)
 {
     static int loaded = 0;
-    const char *host_version;
 
     if (loaded)
         return -1;
     loaded = 1;
 
-    if (!info || !info->version_cb || !info->magic_cb)
+    if (!info || !info->magic_cb)
         return -1;
     if (info->magic_cb() != PLEX_INTERFACE_MAGIC)
         return -1;
-    host_version = info->version_cb();
-    if (!host_version || strcmp(host_version, PLEX_FFMPEG_VERSION) != 0)
-        return -1;
+    if (info->version_cb)
+        fprintf(stderr, "libvvc_decoder: host version '%s'\n", info->version_cb());
     if (info->table_cb)
         info->table_cb((void *)&ff_vvc_decoder);
     return 0;
