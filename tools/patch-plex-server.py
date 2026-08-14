@@ -99,37 +99,69 @@ def relocations(data):
             rel[int(f[0], 16)] = int(f[idx + 1], 16)
     return rel
 
+def insert_bytes(data, pos, n):
+    """Insert n zero bytes at file offset pos, shifting all later file
+    content and updating the ELF bookkeeping (header offsets, section
+    offsets, load segment offsets)."""
+    import struct as s
+    data[pos:pos] = b"\0" * n
+    for hdr_off in (0x20, 0x28):     # e_phoff, e_shoff
+        v = s.unpack_from("<Q", data, hdr_off)[0]
+        if v >= pos:
+            s.pack_into("<Q", data, hdr_off, v + n)
+    e_shoff = s.unpack_from("<Q", data, 0x28)[0]
+    e_shentsize = s.unpack_from("<H", data, 0x3a)[0]
+    e_shnum = s.unpack_from("<H", data, 0x3c)[0]
+    for i in range(e_shnum):
+        off = e_shoff + i * e_shentsize
+        if s.unpack_from("<I", data, off + 4)[0] == 8:   # SHT_NOBITS
+            continue
+        sh_offset = s.unpack_from("<Q", data, off + 0x18)[0]
+        if sh_offset >= pos:
+            s.pack_into("<Q", data, off + 0x18, sh_offset + n)
+    e_phoff = s.unpack_from("<Q", data, 0x20)[0]
+    e_phentsize = s.unpack_from("<H", data, 0x36)[0]
+    e_phnum = s.unpack_from("<H", data, 0x38)[0]
+    for i in range(e_phnum):
+        off = e_phoff + i * e_phentsize
+        if s.unpack_from("<I", data, off)[0] != 1:       # PT_LOAD
+            continue
+        p_offset = s.unpack_from("<Q", data, off + 8)[0]
+        if p_offset >= pos:
+            s.pack_into("<Q", data, off + 8, p_offset + n)
+    return data
+
 def patch_relocations(data, rel_off, rel_size, new_rels):
     """Add or replace R_X86_64_RELATIVE entries in .rela.dyn.
 
     new_rels: list of (r_offset, addend). Entries already present for an
-    r_offset are rewritten in place; the rest are appended after the last
-    non-zero entry. Original order is preserved (the dynamic loader stops
-    at the first all-zero entry).
+    r_offset are rewritten in place; the rest are inserted at the end of
+    the table, shifting the rest of the file (so nothing is overwritten).
+    Returns (data, entries_added).
     """
     import struct as s
     entries = []
     for off in range(rel_off, rel_off + rel_size, 24):
         entries.append(list(s.unpack_from("<QQQ", data, off)))
     by_off = {e[0]: e for e in entries}
+    repl = {}
+    added = 0
     for slot, addend in new_rels:
         if slot in by_off:
-            by_off[slot][2] = addend
+            repl[slot] = addend
         else:
-            # insert at the first zero entry (the loader stops there)
-            first_zero = len(entries)
-            for i, e in enumerate(entries):
-                if e == [0, 0, 0]:
-                    first_zero = i
-                    break
-            entries.insert(first_zero, [slot, (8 << 32) | 8, addend])
-    buf = bytearray(rel_size + 24)
+            data = insert_bytes(data, rel_off + rel_size + added * 24, 24)
+            entries = [list(s.unpack_from("<QQQ", data, off))
+                       for off in range(rel_off, rel_off + rel_size + added * 24, 24)]
+            entries.append([slot, (8 << 32) | 8, addend])
+            added += 1
+    # apply the in-place replacements, then rewrite the table
+    for e in entries:
+        if e[0] in repl:
+            e[2] = repl[e[0]]
     for i, e in enumerate(entries):
-        s.pack_into("<QQQ", buf, i * 24, *e)
-    # zero-pad the remainder so the loader stops at the end of the table
-    data.extend(b"\0" * max(0, (len(entries) * 24) - rel_size))
-    data[rel_off:rel_off + len(entries) * 24] = bytes(buf[:len(entries) * 24])
-    return data
+        s.pack_into("<QQQ", data, rel_off + i * 24, *e)
+    return data, added
 
 def find_table(data, rel):
     """Locate the decoder registry: the count instruction and the table base.
@@ -226,17 +258,15 @@ def main():
     # Write the "vvc" string.
     data[str_off:str_off + len(NAME)] = NAME
     str_va = off_to_va(segs, str_off)
-    # Update the relocations: the name slot gets a new entry, the module
-    # slot replaces the overlapping h263-vaapi entry.
+    # Update the relocations: the name slot gets a new entry (inserted
+    # into .rela.dyn, shifting the file), the module slot replaces the
+    # overlapping h263-vaapi entry in place.
     rela = section(data, ".rela.dyn")
     if not rela:
         sys.exit(".rela.dyn not found")
-    added = 0
-    before = relocations(data)
-    data = patch_relocations(data, rela[0], rela[1],
-                             [(name_slot, str_va), (mod_slot, str_va)])
-    after = relocations(data)
-    added = len(after) - len(before)
+    before = len(relocations(data))
+    data, added = patch_relocations(data, rela[0], rela[1],
+                                    [(name_slot, str_va), (mod_slot, str_va)])
     if added <= 0:
         sys.exit("relocation patch did not add an entry - aborting")
     # Extend the section header and the dynamic DT_RELASZ by the added
