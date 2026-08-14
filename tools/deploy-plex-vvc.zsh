@@ -147,6 +147,21 @@ install_lib() {
 install_lib "$avcodec"  "libavcodec.so.60"
 install_lib "$libformat" "libavformat.so.60"
 
+# 5. Build and install the VVC external decoder module so the transcoder
+#    has a decoder implementation for VVC.
+if zsh "${SCRIPT_PATH}/vvc-module/build-module.zsh" "${SRC_DIR}"; then
+    codec_dir="$(ls -d "${PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR:-/var/lib/plexmediaserver/Library/Application Support/Plex Media Server}"/Codecs/*-linux-x86_64 2> /dev/null | head -1)"
+    if [[ -n "$codec_dir" ]]; then
+        cp -f "${REPO_PATH}/run/libvvc_decoder.so" "$codec_dir/"
+        chown plex:plex "$codec_dir/libvvc_decoder.so"
+        echo "Installed $codec_dir/libvvc_decoder.so"
+    else
+        echo "WARNING: Codecs directory not found - install libvvc_decoder.so manually" >&2
+    fi
+else
+    echo "WARNING: libvvc_decoder.so build failed" >&2
+fi
+
 echo
 echo "Done. Next steps:"
 echo "  1. Restart Plex Media Server (sudo systemctl restart plexmediaserver)."
