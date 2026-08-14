@@ -156,7 +156,10 @@ static void vvc_feed_extradata(AVCodecContext *avctx, VVDecContext *s)
             if (!nb)
                 goto done;
             out = nb;
-            AV_WB32(out + out_size, 1); /* 00 00 00 01 start code */
+            out[out_size]     = 0;   /* 00 00 00 01 start code */
+            out[out_size + 1] = 0;
+            out[out_size + 2] = 0;
+            out[out_size + 3] = 1;
             memcpy(out + out_size + 4, e + pos, nalu_len);
             out_size += 4 + nalu_len;
             pos += nalu_len;
