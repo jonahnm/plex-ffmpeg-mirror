@@ -145,7 +145,9 @@ static int libvvdec_copy_frame(AVCodecContext *avctx, AVFrame *frame,
     frame->width  = dec_frame->width;
     frame->height = dec_frame->height;
 
-    ret = ff_get_buffer(avctx, frame, 0);
+    /* Public API only: the internal ff_get_buffer is not exported by
+     * the host's libavcodec, so a module referencing it fails to load. */
+    ret = av_frame_get_buffer(frame, 0);
     if (ret < 0)
         return ret;
 
