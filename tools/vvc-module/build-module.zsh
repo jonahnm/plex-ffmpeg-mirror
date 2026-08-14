@@ -59,6 +59,9 @@ if [[ ! -d "$VVDEC_SRC" ]]; then
 fi
 if [[ ! -f "${VVDEC_PREFIX}/lib/libvvdec.a" ]]; then
     echo "== building libvvdec (musl, static) =="
+    # vvdec writes its static archive into the source tree's lib/
+    # directory, which its CMake never creates.
+    mkdir -p "${VVDEC_SRC}/lib/release-static"
     cmake -S "$VVDEC_SRC" -B "$VVDEC_BUILD" \
         -DCMAKE_C_COMPILER=x86_64-linux-musl-gcc \
         -DCMAKE_CXX_COMPILER="$MUSL_CXX" \
