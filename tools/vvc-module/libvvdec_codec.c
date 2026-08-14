@@ -323,6 +323,7 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             return ret2;
         if (vvc_nal_is_vcl(type)) {
             au.payload         = s->buf;
+            au.payloadSize     = s->buf_cap;
             au.payloadUsedSize = s->buf_size;
             ret = vvdec_decode(s->dec_ctx, &au, &dec_frame);
             s->buf_size = 0;
