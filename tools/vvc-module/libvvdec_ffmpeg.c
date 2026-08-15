@@ -186,6 +186,8 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         au.payload         = pkt->data;
         au.payloadSize     = pkt->size;
         au.payloadUsedSize = pkt->size;
+        au.cts             = pkt->pts;
+        au.ctsValid        = pkt->pts != AV_NOPTS_VALUE;
         ret = vvdec_decode(s->dec_ctx, &au, &dec_frame);
     } else {
         ret = vvdec_flush(s->dec_ctx, &dec_frame);
