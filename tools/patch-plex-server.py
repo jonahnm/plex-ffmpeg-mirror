@@ -174,7 +174,8 @@ def main():
         struct.pack_into("<Q", data, off + 16, str_va)
         allowed.add((off + 16, 8))
     # the other duplicate (entry 342) gets "vvc1" in its decoder-name
-    # field (+0x08), so files tagged vvc1 also convert.
+    # field (+0x08), so files tagged vvc1 also convert; its module
+    # fields (+0x18/+0x20) feed the ffmpeg codec name and must be "vvc".
     other = min(entries)
     other_start = DEC_LIST_BASE + other * 0x38
     exp = [h for h in find_relocs(data, segs, b"8svx_exp")
@@ -184,6 +185,9 @@ def main():
     off, slot = exp[0]
     struct.pack_into("<Q", data, off + 16, name2_va)
     allowed.add((off + 16, 8))
+    for off, slot in entries[other]:
+        struct.pack_into("<Q", data, off + 16, str_va)
+        allowed.add((off + 16, 8))
     verify_clean(pristine, data, allowed)
     print(f"eightsvx_exp entries {other}/{victim} repointed to 'vvc1'/'vvc': OK")
 
