@@ -178,6 +178,13 @@ if ! grep -q "libvvdec.o" "${SRC_DIR}/libavcodec/Makefile"; then
     echo "OBJS += libvvdec.o" >> "${SRC_DIR}/libavcodec/Makefile" \
         || die "failed to patch libavcodec/Makefile"
 fi
+# The mkv demuxer has no mapping for the VVC codec tag; without it the
+# scanner reports "codec none" for VVC-in-Matroska files.
+if ! grep -q "V_MPEGI/ISO/VVC" "${SRC_DIR}/libavformat/matroska.c"; then
+    sed -i 's|{"V_MPEGH/ISO/HEVC" , AV_CODEC_ID_HEVC},|{"V_MPEGH/ISO/HEVC" , AV_CODEC_ID_HEVC},\n    {"V_MPEGI/ISO/VVC", AV_CODEC_ID_VVC},|' \
+        "${SRC_DIR}/libavformat/matroska.c" \
+        || die "failed to patch matroska.c"
+fi
 
 # 2c. Build the mirrored source with shared libraries and libx264,
 #     forcing a clean rebuild. The native vvc decoder is disabled; the
