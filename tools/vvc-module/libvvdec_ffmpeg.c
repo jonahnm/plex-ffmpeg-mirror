@@ -67,6 +67,10 @@ static av_cold int libvvdec_decode_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
+    /* Reorder depth; tells the pipeline how many frames the decoder
+     * holds back, which affects the start-of-stream timing. */
+    avctx->delay = 16;
+
     return 0;
 }
 
@@ -209,6 +213,13 @@ static int libvvdec_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     if (dec_frame->ctsValid)
         frame->pts = dec_frame->cts;
+
+    /* VVC IRAP NALs (IDR_W_RADL=7, IDR_N_LP=8, CRA=9, GDR=10) are
+     * random access points; the pipeline needs the keyframe flags. */
+    if (dec_frame->picAttributes) {
+        int nt = dec_frame->picAttributes->nalType;
+        frame->key_frame = (nt == 7 || nt == 8 || nt == 9 || nt == 10);
+    }
 
     *got_frame = 1;
     vvdec_frame_unref(s->dec_ctx, dec_frame);
