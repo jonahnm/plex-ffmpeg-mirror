@@ -110,10 +110,12 @@ if [[ -f "libavcodec/libvvdec.c" && -f "libavcodec/codec_list.c" ]] \
     python3 - << 'PYEOF'
 p = "libavcodec/codec_list.c"
 s = open(p).read()
-s = s.replace("extern const FFCodec ff_av1_decoder;",
-              "extern const FFCodec ff_av1_decoder;\nextern const FFCodec ff_vvc_decoder;", 1)
-s = s.replace("&ff_av1_decoder,",
-              "&ff_av1_decoder,\n&ff_vvc_decoder,", 1)
+if "ff_vvc_decoder" not in s:
+    s = s.replace("&ff_av1_decoder,",
+                  "&ff_av1_decoder,\n&ff_vvc_decoder,", 1)
+    s = s.replace("const FFCodec * const codec_list[] = {",
+                  "extern const FFCodec ff_vvc_decoder;\n"
+                  "const FFCodec * const codec_list[] = {", 1)
 open(p, "w").write(s)
 PYEOF
 fi
