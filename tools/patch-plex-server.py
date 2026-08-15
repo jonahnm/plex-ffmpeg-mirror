@@ -28,6 +28,7 @@ import subprocess
 import sys
 
 NAME = b"vvc\x00"
+NAME2 = b"vvc1\x00"
 R_RELATIVE = 8
 SACRIFICE = b"eightsvx_exp"
 DEC_LIST_BASE = 0x15a71d0
@@ -142,10 +143,13 @@ def main():
     if str_off is None:
         sys.exit("no free rodata space")
     data[str_off:str_off + len(NAME)] = NAME
+    name2_off = str_off + len(NAME)
+    data[name2_off:name2_off + len(NAME2)] = NAME2
     str_va = off_to_va(segs, str_off)
-    allowed.add((str_off, len(NAME)))
+    name2_va = off_to_va(segs, name2_off)
+    allowed.add((str_off, len(NAME) + len(NAME2)))
     verify_clean(pristine, data, allowed)
-    print(f"'vvc' string at VA 0x{str_va:x}: OK")
+    print(f"'vvc' string at VA 0x{str_va:x}, 'vvc1' at VA 0x{name2_va:x}: OK")
 
     # 2. find the duplicated eightsvx_exp entries and repoint the second
     #    entry's relocated fields (name at +0x08, module at +0x18/+0x20)
@@ -169,8 +173,19 @@ def main():
     for off, slot in all_hits:
         struct.pack_into("<Q", data, off + 16, str_va)
         allowed.add((off + 16, 8))
+    # the other duplicate (entry 342) gets "vvc1" in its decoder-name
+    # field (+0x08), so files tagged vvc1 also convert.
+    other = min(entries)
+    other_start = DEC_LIST_BASE + other * 0x38
+    exp = [h for h in find_relocs(data, segs, b"8svx_exp")
+           if other_start <= h[1] < other_start + 0x38]
+    if len(exp) != 1:
+        sys.exit(f"expected 1 8svx_exp relocation in entry {other}, found {len(exp)}")
+    off, slot = exp[0]
+    struct.pack_into("<Q", data, off + 16, name2_va)
+    allowed.add((off + 16, 8))
     verify_clean(pristine, data, allowed)
-    print(f"eightsvx_exp#2 (entry {victim}) repointed to 'vvc' ({len(all_hits)} fields): OK")
+    print(f"eightsvx_exp entries {other}/{victim} repointed to 'vvc1'/'vvc': OK")
 
     out = path + ".patched"
     open(out, "wb").write(bytes(data))
