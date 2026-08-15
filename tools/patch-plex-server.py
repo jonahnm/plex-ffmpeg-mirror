@@ -216,12 +216,16 @@ def verify(path):
     segs = pps.segments(data)
     ok = True
     found = 0
+    found2 = 0
     for slot, add in rel.items():
         s = pps.va_to_str(data, segs, add)
         if s == b"vvc":
             print(f"slot {slot:#x} -> {add:#x} {s!r}")
             found += 1
-    if found != 3:
+        elif s == b"vvc1":
+            print(f"slot {slot:#x} -> {add:#x} {s!r}")
+            found2 += 1
+    if found != 5 or found2 != 1:
         ok = False
     print("RELATIVE count:", len(rel))
     print("JUMP_SLOT count:", out.count("R_X86_64_JUMP_SLO"))
