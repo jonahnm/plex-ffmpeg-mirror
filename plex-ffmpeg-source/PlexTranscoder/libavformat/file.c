@@ -41,14 +41,6 @@
 #include "os_support.h"
 #include "url.h"
 
-/* Plex deployment: glibc >= 2.28 redirects fcntl() to fcntl64() when
- * _FILE_OFFSET_BITS=64, and fcntl64 is not exported by every glibc, which
- * prevents the libraries from loading on those hosts. fcntl() already has
- * 64-bit semantics on 64-bit targets, so drop the redirect. */
-#ifdef fcntl
-#undef fcntl
-#endif
-
 /* Some systems may not have S_ISFIFO */
 #ifndef S_ISFIFO
 #  ifdef S_IFIFO

@@ -38,7 +38,6 @@
 #include "riff.h"
 #include "version.h"
 #include "vorbiscomment.h"
-#include "vvc.h"
 #include "wv.h"
 
 #include "libavutil/avstring.h"
@@ -1138,9 +1137,6 @@ static int mkv_assemble_native_codecprivate(AVFormatContext *s, AVIOContext *dyn
                                   extradata_size);
     case AV_CODEC_ID_HEVC:
         return ff_isom_write_hvcc(dyn_cp, extradata,
-                                  extradata_size, 0);
-    case AV_CODEC_ID_VVC:
-        return ff_isom_write_vvcc(dyn_cp, extradata,
                                   extradata_size, 0);
     case AV_CODEC_ID_ALAC:
         if (extradata_size < 36) {
@@ -3441,10 +3437,8 @@ static int mkv_init(struct AVFormatContext *s)
             break;
         case AV_CODEC_ID_H264:
         case AV_CODEC_ID_HEVC:
-        case AV_CODEC_ID_VVC:
-            if (((par->codec_id == AV_CODEC_ID_H264 && par->extradata_size > 0) ||
-                 (par->codec_id == AV_CODEC_ID_HEVC && par->extradata_size > 6) ||
-                 (par->codec_id == AV_CODEC_ID_VVC  && par->extradata_size >= 6)) &&
+            if ((par->codec_id == AV_CODEC_ID_H264 && par->extradata_size > 0 ||
+                 par->codec_id == AV_CODEC_ID_HEVC && par->extradata_size > 6) &&
                 (AV_RB24(par->extradata) == 1 || AV_RB32(par->extradata) == 1))
                 track->reformat = mkv_reformat_h2645;
             break;
