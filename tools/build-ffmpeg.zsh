@@ -113,9 +113,7 @@ s = open(p).read()
 if "ff_vvc_decoder" not in s:
     s = s.replace("&ff_av1_decoder,",
                   "&ff_av1_decoder,\n&ff_vvc_decoder,", 1)
-    s = s.replace("const FFCodec * const codec_list[] = {",
-                  "extern const FFCodec ff_vvc_decoder;\n"
-                  "const FFCodec * const codec_list[] = {", 1)
+    s = "extern const FFCodec ff_vvc_decoder;\n" + s
 open(p, "w").write(s)
 PYEOF
 fi
